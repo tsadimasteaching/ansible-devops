@@ -1,0 +1,79 @@
+---
+- hosts: all
+  become: yes
+
+  pre_tasks:
+    - name: Install the PostgreSQL package
+      apt:
+        name: ["postgresql-contrib", "postgresql-client"]
+        state: present
+
+    - name: install pip3
+      apt:
+        name: ["python3-pip"]
+        state: present
+        update_cache: yes
+
+    - name: "Install Python packages"
+      pip: "name={{ item }}  state=present"
+      with_items:
+        - psycopg2-binary
+
+  tasks:
+    - name: check if postgres is initialized
+      ansible.builtin.stat:
+        path: /var/lib/postgresql/14/main
+      register: postgres_data
+
+    - name: "Initialize PostgreSQL"
+      shell: "postgresql-setup initdb"
+      when: not postgres_data.stat.exists
+
+    - name: "Start and enable services"
+      service: "name={{ item }} state=started enabled=yes"
+      with_items:
+        - postgresql
+
+    - name: "Create app database"
+      postgresql_db:
+        state: present
+        name: "{{ db.name }}"
+      become: yes
+      become_user: postgres
+
+
+    - name: "Create db user"
+      postgresql_user:
+          state: present
+          name: "{{ db.user }}"
+          password: "{{ db.password }}"
+      become: yes
+      become_user: postgres
+
+    - name: "Grant db user access to app db"
+      postgresql_privs:
+        type: database
+        database: "{{ db.name }}"
+        roles: "{{ db.user }}"
+        grant_option: no
+        privs: all
+      become: yes
+      become_user: postgres
+
+    - name: "Allow md5 connection for the db user"
+      postgresql_pg_hba:
+        dest: "/etc/postgresql/14/main/pg_hba.conf"
+        contype: host
+        databases: all
+        method: md5
+        users: "{{ db.user }}"
+        create: true
+      become: yes
+      become_user: postgres
+      notify: restart postgres
+
+  handlers:
+    - name: restart postgres
+      service: name=postgresql state=restarted
+
+

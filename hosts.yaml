@@ -1,0 +1,17 @@
+---
+control:
+  hosts:
+    local-control:
+      ansible_connection: local
+    control-vm:
+      ansible_host: control
+
+appservers:
+    hosts:
+      appserver-vm:
+        ansible_host: appserver
+
+dbservers:
+    hosts:
+      dbserver-vm:
+          ansible_host: dbserver

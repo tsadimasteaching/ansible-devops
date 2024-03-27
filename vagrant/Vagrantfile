@@ -1,0 +1,24 @@
+Vagrant.configure("2") do |config|
+  config.hostmanager.enabled = true
+  config.vm.box = "ubuntu/jammy64"
+
+  config.vm.define "control", primary: true do |h|
+    h.vm.hostname = "control"
+    h.vm.network "private_network", ip: "192.168.56.10"
+    h.vm.provision "shell", path: "scripts/key.sh"
+  end
+
+  config.vm.define "appserver" do |h|
+    h.vm.hostname = "appserver"
+    h.vm.network "private_network", ip: "192.168.56.101"
+    h.vm.provision :shell, inline: 'cat /vagrant/control.pub >> /home/vagrant/.ssh/authorized_keys'
+  end
+
+ config.vm.define "dbserver" do |h|
+   h.vm.hostname = "dbserver"
+   h.vm.network "private_network", ip: "192.168.56.102"
+   h.vm.provision :shell, inline: 'cat /vagrant/control.pub >> /home/vagrant/.ssh/authorized_keys'
+ end
+
+
+end
