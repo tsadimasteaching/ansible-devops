@@ -1,0 +1,6 @@
+app:
+  env:
+    server.port: 9090
+    spring.datasource.username: dbuser
+    spring.datasource.password: pass123
+    spring.datasource.url: "jdbc:postgresql://appuser:apppassword@dbserver-vm:5432/appdb"

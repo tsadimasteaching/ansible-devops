@@ -1,0 +1,47 @@
+---
+- hosts: all
+  become: yes
+
+  vars:
+    appdir: "/home/vagrant/spring"
+    branch: "api"
+
+  pre_tasks:
+      - name: Install Java
+        apt:
+            name: openjdk-21-jdk
+            state: present
+
+      - name: Install Maven
+        apt:
+            name: maven
+            state: present
+
+  tasks:
+      - name: "Clone the Spring repository"
+        git:
+            repo: "https://github.com/tsadimasteaching/ds-lab-2023.git"
+            dest: "{{ appdir }}"
+            version: "{{ branch }}"
+            force: yes
+
+      - name: "Populate application.properties"
+        lineinfile:
+          dest: "{{ appdir }}/src/main/resources/application.properties"
+          state: present
+          regexp: "^{{item.key}}="
+          line: "{{item.key}}='{{item.value}}'"
+        with_items:
+          - "{{app.env | dict2items}}"
+
+      - name: "Build the Spring application"
+        command: "mvn package"
+        args:
+            chdir: "{{ appdir }}"
+
+      - name: "Run the Spring application"
+        command: "java -jar target/spring-0.0.1-SNAPSHOT.jar"
+        args:
+            chdir: "{{ appdir }}"
+
+
