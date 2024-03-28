@@ -1,6 +1,10 @@
 app:
   env:
     server.port: 9090
-    spring.datasource.username: dbuser
-    spring.datasource.password: pass123
-    spring.datasource.url: "jdbc:postgresql://appuser:apppassword@dbserver-vm:5432/appdb"
+    spring.datasource.username: appuser
+    spring.datasource.password: apppassword
+    spring.datasource.url: jdbc:postgresql://dbserver:5432/appdb
+
+service:
+  workingdir: "/home/vagrant/spring"
+  execstart: "java -jar target/springbootdemo-0.0.1-SNAPSHOT.jar"

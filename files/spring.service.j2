@@ -1,0 +1,12 @@
+[Unit]
+Description=spring boot daemon
+After=network.target
+
+[Service]
+User=vagrant
+Group=vagrant
+WorkingDirectory={{service.workingdir}}
+ExecStart={{service.execstart}}
+
+[Install]
+WantedBy=multi-user.target

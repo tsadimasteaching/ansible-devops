@@ -1,6 +1,5 @@
 ---
 - hosts: all
-  become: yes
 
   vars:
     appdir: "/home/vagrant/spring"
@@ -11,11 +10,8 @@
         apt:
             name: openjdk-21-jdk
             state: present
-
-      - name: Install Maven
-        apt:
-            name: maven
-            state: present
+            update_cache: yes
+        become: yes
 
   tasks:
       - name: "Clone the Spring repository"
@@ -30,18 +26,38 @@
           dest: "{{ appdir }}/src/main/resources/application.properties"
           state: present
           regexp: "^{{item.key}}="
-          line: "{{item.key}}='{{item.value}}'"
+          line: "{{item.key}}={{item.value}}"
         with_items:
           - "{{app.env | dict2items}}"
 
       - name: "Build the Spring application"
-        command: "mvn package"
+        command: "./mvnw package -Dmaven.test.skip "
         args:
             chdir: "{{ appdir }}"
 
-      - name: "Run the Spring application"
-        command: "java -jar target/spring-0.0.1-SNAPSHOT.jar"
-        args:
-            chdir: "{{ appdir }}"
+#      - name: "Run the Spring application"
+#        command: "java -jar target/springbootdemo-0.0.1-SNAPSHOT.jar"
+#        args:
+#            chdir: "{{ appdir }}"
 
+      - name: copy spring service file
+        template:
+          src: ../files/spring.service.j2
+          dest: "/etc/systemd/system/spring.service"
+        become: yes
+        become_user: root
+        notify: restart spring
 
+      - name: ensure spring service started
+        service:
+          name: spring
+          state: started
+          enabled: yes
+        become: yes
+
+  handlers:
+  - name: restart spring
+    service:
+      name: spring
+      state: restarted
+    become: yes
