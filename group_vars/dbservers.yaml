@@ -1,0 +1,4 @@
+db:
+  name: "appdb"
+  user: "appuser"
+  password: "apppassword"
