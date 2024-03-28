@@ -1,12 +1,15 @@
 ---
-- hosts: all
+- hosts: dbservers
   become: yes
+  become_user: root
+
 
   pre_tasks:
     - name: Install the PostgreSQL package
       apt:
         name: ["postgresql-contrib", "postgresql-client"]
         state: present
+        update_cache: yes
 
     - name: install pip3
       apt:
@@ -15,7 +18,9 @@
         update_cache: yes
 
     - name: "Install Python packages"
-      pip: "name={{ item }}  state=present"
+      pip:
+        name: "{{ item }}"
+        state: present
       with_items:
         - psycopg2-binary
 
@@ -25,12 +30,19 @@
         path: /var/lib/postgresql/14/main
       register: postgres_data
 
+    - name: debug stat
+      ansible.builtin.debug:
+        msg: "postgres data debug {{postgres_data}}"
+
     - name: "Initialize PostgreSQL"
       shell: "postgresql-setup initdb"
       when: not postgres_data.stat.exists
 
     - name: "Start and enable services"
-      service: "name={{ item }} state=started enabled=yes"
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
       with_items:
         - postgresql
 
