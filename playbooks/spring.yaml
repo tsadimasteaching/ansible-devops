@@ -55,9 +55,42 @@
           enabled: yes
         become: yes
 
+      - name: "APT - install nginx"
+        apt:
+          name: nginx
+          update_cache: yes
+        become: yes
+
+      - name: copy nginx conf file
+        template:
+          src: ../files/nginx.http.j2
+          dest: "/etc/nginx/sites-available/spring"
+        become: yes
+
+      - name: enable spring site in nginx
+        file:
+          src: "/etc/nginx/sites-available/spring"
+          dest: "/etc/nginx/sites-enabled/spring"
+          state: link
+        become: yes
+        notify: restart nginx
+
+      - name: de-activate default nginx site
+        file:
+          path: /etc/nginx/sites-enabled/default
+          state: absent
+        become: yes
+        notify: restart nginx
+
   handlers:
   - name: restart spring
     service:
       name: spring
+      state: restarted
+    become: yes
+
+  - name: restart nginx
+    service:
+      name: nginx
       state: restarted
     become: yes

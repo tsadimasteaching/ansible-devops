@@ -1,3 +1,4 @@
+app_port: 9090
 app:
   env:
     server.port: 9090
