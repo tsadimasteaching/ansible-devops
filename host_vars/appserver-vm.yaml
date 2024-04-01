@@ -1,11 +1,6 @@
-appdir: "/home/vagrant/spring"
-branch: "api"
-appuser: "vagrant"
-appgroup: "vagrant"
-app_port: 9090
 app:
   env:
-    server.port: 9090
+    server.port: "{{app_port}}"
     spring.datasource.username: appuser
     spring.datasource.password: apppassword
     spring.datasource.url: jdbc:postgresql://dbserver:5432/appdb

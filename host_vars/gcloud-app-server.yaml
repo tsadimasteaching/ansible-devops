@@ -1,11 +1,6 @@
-appdir: "/home/rg/spring"
-branch: "api"
-appuser: "rg"
-appgroup: "rg"
-app_port: 9090
 app:
   env:
-    server.port: 9090
+    server.port: "{{app_port}}"
     spring.datasource.username: appuser
     spring.datasource.password: apppassword
     spring.datasource.url: jdbc:postgresql://4.211.249.239:5432/appdb
