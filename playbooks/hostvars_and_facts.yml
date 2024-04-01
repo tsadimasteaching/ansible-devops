@@ -1,0 +1,13 @@
+---
+- name: check
+  hosts: all
+
+  tasks:
+
+    - name: print hostvars
+      debug:
+        msg: "hostvars is {{hostvars}}"
+
+    - name: Show facts available on the system
+      ansible.builtin.debug:
+        var: ansible_facts

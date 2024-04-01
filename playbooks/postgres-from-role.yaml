@@ -1,0 +1,33 @@
+---
+- hosts: dbservers
+  roles:
+    - role: geerlingguy.postgresql
+      become: yes
+  tasks:
+    - name: change listen_addresses to '*'
+      lineinfile:
+        dest: /etc/postgresql/14/main/postgresql.conf
+        regexp: "^#listen_addresses"
+        line: "listen_addresses = '*'"
+        state: present
+        backup: yes
+      become: yes
+      notify:
+        - restart postgresql
+  tags:
+    - postgres
+  vars:
+    postgresql_databases:
+      - name: "{{ db.name }}"
+    postgresql_users:
+      - name: "{{ db.user }}"
+        password: "{{ db.password }}"
+    postgresql_locales:
+      - 'en_US.UTF-8'
+    postgresql_hba_entries:
+      - { type: local, database: all, user: postgres, auth_method: peer }
+      - { type: local, database: all, user: all, auth_method: peer }
+      - { type: host, database: all, user: all, address: '127.0.0.1/32', auth_method: md5 }
+      - { type: host, database: all, user: all, address: '0.0.0.0/0', auth_method: md5 }
+      - { type: host, database: all, user: all, address: '::1/128', auth_method: md5 }
+
