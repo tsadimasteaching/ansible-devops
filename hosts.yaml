@@ -10,8 +10,12 @@ appservers:
     hosts:
       appserver-vm:
         ansible_host: appserver
+      gcloud-app-server:
+        ansible_host: devops-gcloud
 
 dbservers:
     hosts:
       dbserver-vm:
           ansible_host: dbserver
+      azure-db-server:
+          ansible_host: devops-azure

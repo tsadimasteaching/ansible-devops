@@ -1,9 +1,6 @@
 ---
 - hosts: all
 
-  vars:
-    appdir: "/home/vagrant/spring"
-    branch: "api"
 
   pre_tasks:
       - name: Install Java
@@ -47,6 +44,12 @@
         become: yes
         become_user: root
         notify: restart spring
+
+      - name: reload spring service
+        service:
+          name: spring
+          state: restarted
+        become: yes
 
       - name: ensure spring service started
         service:

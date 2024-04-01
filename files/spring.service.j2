@@ -3,8 +3,8 @@ Description=spring boot daemon
 After=network.target
 
 [Service]
-User=vagrant
-Group=vagrant
+User={{appuser}}
+Group={{appgroup}}
 WorkingDirectory={{service.workingdir}}
 ExecStart={{service.execstart}}
 

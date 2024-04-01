@@ -1,15 +1,15 @@
-appdir: "/home/vagrant/spring"
+appdir: "/home/rg/spring"
 branch: "api"
-appuser: "vagrant"
-appgroup: "vagrant"
+appuser: "rg"
+appgroup: "rg"
 app_port: 9090
 app:
   env:
     server.port: 9090
     spring.datasource.username: appuser
     spring.datasource.password: apppassword
-    spring.datasource.url: jdbc:postgresql://dbserver:5432/appdb
+    spring.datasource.url: jdbc:postgresql://4.211.249.239:5432/appdb
 
 service:
-  workingdir: "/home/vagrant/spring"
+  workingdir: "/home/rg/spring"
   execstart: "java -jar target/springbootdemo-0.0.1-SNAPSHOT.jar"
