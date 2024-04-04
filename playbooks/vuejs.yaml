@@ -1,0 +1,86 @@
+---
+- hosts: appservers
+
+  vars:
+      frontendappdir: "{{ ansible_user_dir }}/frontend"
+      branch: "main"
+      nginx_root_location: /var/www/html
+
+  pre_tasks:
+
+    - name: Install Nginx
+      package:
+        name: nginx
+        state: latest
+      become: yes
+
+    - name: Install nvm
+      shell: |
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+      args:
+        executable: /bin/bash
+        chdir: "$HOME"
+        creates: "$HOME/.nvm/nvm.sh"
+
+    - name: Setup .profile
+      ansible.builtin.lineinfile:
+        path: ~/.profile
+        line: source ~/.nvm/nvm.sh # This will make sure Node is on the user's PATH
+        create: yes
+
+    - name: "debug"
+      ansible.builtin.debug:
+        msg: "PATH : {{ ansible_env.PATH }}"
+      
+    - name: Install node
+      shell: |
+        nvm install 20.12.1
+      args:
+        executable: /bin/bash
+        chdir: "$HOME"
+        creates: "$HOME/.nvm/versions/node/v20.12.1"
+  
+    - name: Install Git
+      package:
+        name: git
+        state: latest
+      become: yes
+
+
+
+  tasks:
+    - name: "Clone the Vue repository"
+      git:
+          repo: "https://github.com/gkoulis/ds-lab-2023-frontend.git"
+          dest: "{{ frontendappdir }}"
+          version: "{{ branch }}"
+          force: yes
+
+    - name: "Install dependencies"
+      shell: |
+        export PATH=$PATH:~/.nvm/versions/node/v20.12.1/bin; npm install
+      args:
+        chdir: "{{ frontendappdir }}"
+
+    - name: "Build the Vue.js application"
+      shell: |
+        export PATH=$PATH:~/.nvm/versions/node/v20.12.1/bin; npm run build
+      args:
+        chdir: "{{ frontendappdir }}"
+
+    - name: Copy dist in nginx location 
+      copy:
+        src: "{{ frontendappdir }}/dist/"
+        dest: "{{ nginx_root_location }}"
+        remote_src: True
+        mode: 7777
+      notify: restart nginx
+      become: yes
+    
+  handlers:
+    - name: restart nginx
+      service:
+        name: nginx
+        state: restarted
+
+    

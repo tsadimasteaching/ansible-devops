@@ -10,8 +10,11 @@ appservers:
     hosts:
       appserver-vm:
         ansible_host: appserver
+      frontend-vm:
+        ansible_host: frontserver
       gcloud-app-server:
         ansible_host: devops-gcloud
+      
 
 dbservers:
     hosts:
