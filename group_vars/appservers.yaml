@@ -3,3 +3,5 @@ branch: "api"
 appuser: "{{ansible_user_id}}"
 appgroup: "{{ansible_user_gid}}"
 app_port: 9090
+app:
+  VITE_BACKEND:  http://192.168.56.103

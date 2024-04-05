@@ -3,8 +3,8 @@
 
   vars:
       frontendappdir: "{{ ansible_user_dir }}/frontend"
-      branch: "main"
-      nginx_root_location: /var/www/html
+      branch: "env"
+      site_location: /var/www/vue
 
   pre_tasks:
 
@@ -34,7 +34,7 @@
       
     - name: Install node
       shell: |
-        nvm install 20.12.1
+        source $HOME/.nvm/nvm.sh && nvm install 20.12.1
       args:
         executable: /bin/bash
         chdir: "$HOME"
@@ -56,6 +56,19 @@
           version: "{{ branch }}"
           force: yes
 
+    - name: copy env file
+      shell : "cp {{frontendappdir}}/.env.example {{frontendappdir}}/.env"
+
+    - name: populate  ~/.env
+      lineinfile:
+        dest: "{{frontendappdir}}/.env"
+        state: present
+        regexp: "^{{item.key}}="
+        line: "{{item.key}}='{{item.value}}'"
+      with_items:
+        - "{{app | dict2items}}"
+
+
     - name: "Install dependencies"
       shell: |
         export PATH=$PATH:~/.nvm/versions/node/v20.12.1/bin; npm install
@@ -71,16 +84,39 @@
     - name: Copy dist in nginx location 
       copy:
         src: "{{ frontendappdir }}/dist/"
-        dest: "{{ nginx_root_location }}"
+        dest: "{{ site_location }}"
         remote_src: True
         mode: 7777
+        force: true
       notify: restart nginx
       become: yes
+
+    - name: copy nginx conf file
+      template:
+        src: ../files/nginx.vue.j2
+        dest: "/etc/nginx/sites-available/vue"
+      become: yes
+
+    - name: enable vue site in nginx
+      file:
+        src: "/etc/nginx/sites-available/vue"
+        dest: "/etc/nginx/sites-enabled/vue"
+        state: link
+      become: yes
+    
+
+    - name: de-activate default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      become: yes
+      notify: restart nginx
     
   handlers:
     - name: restart nginx
       service:
         name: nginx
         state: restarted
+      become: yes
 
     
