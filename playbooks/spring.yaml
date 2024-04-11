@@ -1,14 +1,13 @@
 ---
 - hosts: all
 
-
   pre_tasks:
-      - name: Install Java
-        apt:
-            name: openjdk-21-jdk
-            state: present
-            update_cache: yes
-        become: yes
+    - name: Install Java
+      apt:
+          name: openjdk-21-jdk
+          state: present
+          update_cache: yes
+      become: yes
 
   tasks:
       - name: "debug appdir"
