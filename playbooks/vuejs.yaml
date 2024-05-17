@@ -8,6 +8,16 @@
 
   pre_tasks:
 
+    - name: Find my public ip
+      uri:
+        url: http://ifconfig.me/ip
+        return_content: yes
+      register: ip_response
+
+    - name: See public ip
+      debug:
+        var: ip_response.content
+
     - name: Install Nginx
       package:
         name: nginx
