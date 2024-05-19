@@ -1,0 +1,35 @@
+---
+- ansible.builtin.import_playbook: docker.yaml
+- hosts: all
+  become: yes
+  tasks:
+    - name: "Clone the Spring repository"
+      git:
+        repo: "https://github.com/tsadimasteaching/ds-lab-2023.git"
+        dest: "{{ appdir }}"
+        version: "{{ branch }}"
+        force: yes
+
+    - name: "Populate application.properties"
+      lineinfile:
+        dest: "{{ appdir }}/src/main/resources/application.properties"
+        state: present
+        regexp: "^{{item.key}}="
+        line: "{{item.key}}={{item.value}}"
+      with_items:
+        - "{{app.env | dict2items}}"
+
+    - name: Tear down existing services
+      community.docker.docker_compose:
+        project_src: "{{ appdir }}"
+        state: absent
+
+    - name: Create and start services
+      docker_compose:
+        project_src: "{{ appdir }}"
+      register: output
+
+    - debug:
+        var: output
+
+
