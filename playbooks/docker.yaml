@@ -1,0 +1,45 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Install basic packages
+      apt:
+        name: "{{item}}"
+        state: present
+        update_cache: true
+      loop:
+        - software-properties-common
+        - curl
+        - apt-transport-https
+        - ca-certificates
+
+    - name: get key
+      shell: "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -"
+      #ignore_errors: yes
+
+    - name: Add docker ppa
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+        update_cache: yes
+
+    - name: install docker
+      apt:
+        name: "{{item}}"
+        state: present
+        update_cache: true
+      loop:
+        - docker-ce
+        - docker-compose
+
+    - name: start docker service
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: adding existing user to group docker
+      user:
+        name: "{{ ansible_user_id }}"
+        groups: docker
+        append: yes

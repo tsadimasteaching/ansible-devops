@@ -3,7 +3,7 @@
 
   vars:
       frontendappdir: "{{ ansible_user_dir }}/frontend"
-      branch: "env"
+      branch: "main"
       site_location: /var/www/vue
 
   pre_tasks:
