@@ -6,5 +6,5 @@ app:
     spring.datasource.url: jdbc:postgresql://dbserver:5432/appdb
 
 service:
-  workingdir: "/home/vagrant/spring"
+  workingdir: "{{ ansible_user_dir }}/spring"
   execstart: "java -jar target/springbootdemo-0.0.1-SNAPSHOT.jar"
