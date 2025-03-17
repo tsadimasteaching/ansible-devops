@@ -2,7 +2,13 @@ appdir: "{{ ansible_user_dir }}/spring"
 branch: "api"
 appuser: "{{ansible_user_id}}"
 appgroup: "{{ansible_user_gid}}"
-app_port: 9090
-backend_server_url: "http://192.168.56.101:9090"
+app_port: 8080
+backend_server_url: "http://192.168.56.101:8080"
 app:
   VITE_BACKEND:  http://192.168.56.103
+  env:
+    server.port: "{{app_port}}"
+    spring.datasource.username: appuser
+    spring.datasource.password: apppassword
+    spring.datasource.url: jdbc:postgresql://dbserver:5432/appdb
+

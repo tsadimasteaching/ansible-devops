@@ -16,7 +16,7 @@
 
       - name: "Clone the Spring repository"
         git:
-            repo: "https://github.com/tsadimasteaching/ds-lab-2023.git"
+            repo: "https://github.com/tsadimasteaching/ds-lab-2024.git"
             dest: "{{ appdir }}"
             version: "{{ branch }}"
             force: yes
@@ -30,15 +30,51 @@
         with_items:
           - "{{app.env | dict2items}}"
 
-      - name: "Build the Spring application"
-        command: "./mvnw package -Dmaven.test.skip "
-        args:
-            chdir: "{{ appdir }}"
+      
+      - name: "Build spring project"
+        block:
 
-#      - name: "Run the Spring application"
-#        command: "java -jar target/springbootdemo-0.0.1-SNAPSHOT.jar"
-#        args:
-#            chdir: "{{ appdir }}"
+        - name: "Build the Spring application"
+          command: "./mvnw package -Dmaven.test.skip "
+          args:
+              chdir: "{{ appdir }}"
+
+  #      - name: "Run the Spring application"
+  #        command: "java -jar target/springbootdemo-0.0.1-SNAPSHOT.jar"
+  #        args:
+  #            chdir: "{{ appdir }}"
+
+        rescue:
+
+        - name: Fetch the SHA-512 checksum for Maven 3.9.9
+          get_url:
+            url: https://downloads.apache.org/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.zip.sha512
+            dest: /tmp/maven_sha512.txt
+            validate_certs: yes
+            force: yes
+
+        - name: Read the SHA-512 checksum from the file
+          command: cat /tmp/maven_sha512.txt
+          register: sha512_checksum
+
+        - name: Replace the distributionSha512Sum line in maven-wrapper.properties
+          replace:
+            path: "{{ appdir }}/.mvn/wrapper/maven-wrapper.properties"
+            regexp: '^distributionSha'
+            replace: "distributionSha512Sum={{ sha512_checksum.stdout }}"
+        
+        - name: Clean up the temporary file
+          file:
+            path: /tmp/maven_sha512.txt
+            state: absent
+          when: sha512_checksum is defined
+        
+        always:
+          - name: "Build the Spring application"
+            command: "./mvnw package -Dmaven.test.skip "
+            args:
+                chdir: "{{ appdir }}"
+
 
       - name: copy spring service file
         template:
