@@ -1,0 +1,89 @@
+---
+  - name: install postgres
+    hosts: dbservers
+    become: yes
+    become_user: root
+
+    tasks:
+      - name: install postgres  and pip packages
+        apt:
+          name: postgresql, python3-pip
+          state: present
+          update_cache: yes
+        tags:
+          - install
+     
+      - block:
+
+        - name: edit postgres.conf
+          lineinfile: 
+            path: /etc/postgresql/16/main/postgresql.conf
+            regexp: '^#listen_addresses ='
+            line:  "listen_addresses='*'"
+          notify: 
+            - restart postgres
+          tags:
+            - edit
+
+        - name: edit pg_hba.conf
+          lineinfile: 
+            path: /etc/postgresql/16/main/pg_hba.conf
+            line:  "host	all	all	0.0.0.0/0	md5"
+            create: yes
+          notify: 
+            - restart postgres
+          tags:
+            - edit
+                
+        when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '24.04'
+
+
+     
+        
+      - block:
+        - name: create postgres user
+          postgresql_user:
+            name: myuser
+            password: 'pass12345'
+          become: yes
+          become_user: postgres
+
+        - name: create postgres database
+          postgresql_db:
+            name: mydb
+            owner: myuser
+          become: yes
+          become_user: postgres
+          
+        rescue:
+        # - name: install python pg module
+        #   command: pip3 install psycopg2-binary --break-system-packages
+        #   tags:
+        #     - install
+        - name: apt install psycopg2-binary
+          apt:
+            name: python3-psycopg2
+            state: present
+          tags:
+            - install
+
+        always:
+          - name: create postgres user
+            postgresql_user:
+              name: myuser
+              password: 'pass12345'
+            become: yes
+            become_user: postgres
+
+          - name: create postgres database
+            postgresql_db:
+              name: mydb
+              owner: myuser
+            become: yes
+            become_user: postgres 
+
+    handlers:
+      - name: restart postgres
+        service:
+          name: postgresql
+          state: restarted
