@@ -1,0 +1,121 @@
+---
+- hosts: dbservers
+  become: yes
+  become_user: root
+
+
+  pre_tasks:
+    - name: Install the PostgreSQL package
+      apt:
+        name: ["postgresql-contrib", "postgresql-client"]
+        state: present
+        update_cache: yes
+
+    - name: install pip3
+      apt:
+        name: ["python3-pip"]
+        state: present
+        update_cache: yes
+
+    - name: "Install Python packages"
+      pip:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - psycopg2-binary
+
+    - name: Get Ubuntu version
+      command: lsb_release -rs
+      register: ubuntu_version
+      changed_when: false
+      check_mode: false
+
+    - name: debug ubuntu version
+      ansible.builtin.debug:
+        msg: "ubuntu version debug {{ubuntu_version}}"
+
+    - name: Set PostgreSQL version for Ubuntu 22.04
+      set_fact:
+        postgres_version: 14
+      when: ubuntu_version.stdout == "22.04"
+
+    - name: Set PostgreSQL version for Ubuntu 24.04
+      set_fact:
+        postgres_version: 16
+      when: ubuntu_version.stdout == "24.04"
+
+  tasks:
+    - name: check if postgres is initialized
+      ansible.builtin.stat:
+        path: /var/lib/postgresql/14/main
+      register: postgres_data
+
+    - name: debug stat
+      ansible.builtin.debug:
+        msg: "postgres data debug {{postgres_data}}"
+
+    - name: "Initialize PostgreSQL"
+      shell: "postgresql-setup initdb"
+      when: not postgres_data.stat.exists
+
+    - name: "Start and enable services"
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      with_items:
+        - postgresql
+
+    - name: "Create app database"
+      postgresql_db:
+        state: present
+        name: "{{ db.name }}"
+      become: yes
+      become_user: postgres
+
+
+    - name: "Create db user"
+      postgresql_user:
+          state: present
+          name: "{{ db.user }}"
+          password: "{{ db.password }}"
+      become: yes
+      become_user: postgres
+
+    - name: "Grant db user access to app db"
+      postgresql_privs:
+        type: database
+        database: "{{ db.name }}"
+        roles: "{{ db.user }}"
+        grant_option: no
+        privs: all
+      become: yes
+      become_user: postgres
+
+    - name: "Allow md5 connection for the db user"
+      postgresql_pg_hba:
+        dest: "/etc/postgresql/{{ postgres_version }}/main/pg_hba.conf"
+        contype: host
+        databases: all
+        source: 0.0.0.0/0
+        method: md5
+        users: "{{ db.user }}"
+        create: true
+      become: yes
+      become_user: postgres
+      notify: restart postgres
+
+    - name: "Allow connections from all"
+      lineinfile:
+        path: "/etc/postgresql/{{ postgres_version }}/main/postgresql.conf"
+        line: "listen_addresses = '*'"
+        regexp: "^#listen_addresses = 'localhost'"
+        state: present
+      become: yes
+      become_user: postgres
+      notify: restart postgres
+
+  handlers:
+    - name: restart postgres
+      service: name=postgresql state=restarted
+
