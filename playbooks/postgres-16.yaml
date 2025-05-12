@@ -78,7 +78,7 @@
           - name: create postgres database
             postgresql_db:
               name: "{{ db.user }}"
-              owner: "{{ db.user }}"gst
+              owner: "{{ db.user }}"
             become: yes
             become_user: postgres 
 
