@@ -43,15 +43,15 @@
       - block:
         - name: create postgres user
           postgresql_user:
-            name: myuser
-            password: 'pass12345'
+            name: "{{ db.user }}"
+            password: "{{ db.password }}"
           become: yes
           become_user: postgres
 
         - name: create postgres database
           postgresql_db:
-            name: mydb
-            owner: myuser
+            name: "{{ db.name }}"
+            owner: "{{ db.user }}"
           become: yes
           become_user: postgres
           
@@ -70,15 +70,15 @@
         always:
           - name: create postgres user
             postgresql_user:
-              name: myuser
-              password: 'pass12345'
+              name: "{{ db.user }}"
+              password: "{{ db.password }}"
             become: yes
             become_user: postgres
 
           - name: create postgres database
             postgresql_db:
-              name: mydb
-              owner: myuser
+              name: "{{ db.user }}"
+              owner: "{{ db.user }}"gst
             become: yes
             become_user: postgres 
 
