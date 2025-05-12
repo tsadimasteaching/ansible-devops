@@ -18,7 +18,7 @@
 
     - name: "Clone the Spring repository"
       git:
-        repo: "https://github.com/tsadimasteaching/ds-lab-2023.git"
+        repo: "https://github.com/tsadimasteaching/ds-lab-2024.git"
         dest: "{{ appdir }}"
         version: "{{ branch }}"
         force: yes
@@ -33,14 +33,14 @@
         - "{{app.env | dict2items}}"
 
     - name: Tear down existing services
-      community.docker.docker_compose:
+      community.docker.docker_compose_v2:
         project_src: "{{ appdir }}"
         state: absent
 
     - name: Create and start services
-      docker_compose:
+      community.docker.docker_compose_v2:
         project_src: "{{ appdir }}"
-        build: true
+        build: always
         state: present
       register: output
       notify: Restart Docker Compose
@@ -49,9 +49,9 @@
         var: output
 
   handlers:
-    - name: Restart Docker Compose
-      community.docker.docker_compose:
-        project_src: "{{ appdir }}"
-        restarted: true
+  - name: Restart Docker Compose
+    community.docker.docker_compose_v2:
+      project_src: "{{ appdir }}"
+      state: restarted
 
 

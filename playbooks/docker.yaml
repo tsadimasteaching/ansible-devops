@@ -1,6 +1,6 @@
 ---
 - hosts: all
-  become: yes
+
   tasks:
     - name: Install basic packages
       apt:
@@ -12,16 +12,19 @@
         - curl
         - apt-transport-https
         - ca-certificates
+      become: yes
 
     - name: get key
       shell: "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -"
       #ignore_errors: yes
+      become: yes
 
     - name: Add docker ppa
       apt_repository:
         repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
         state: present
         update_cache: yes
+      become: yes
 
     - name: install docker
       apt:
@@ -31,15 +34,18 @@
       loop:
         - docker-ce
         - docker-compose
+      become: yes
 
     - name: start docker service
       service:
         name: docker
         state: started
         enabled: true
+      become: yes
 
     - name: adding existing user to group docker
       user:
-        name: "{{ ansible_user_id }}"
+        name: "{{  ansible_user_id }}"
         groups: docker
         append: yes
+      become: yes
