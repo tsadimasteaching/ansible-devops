@@ -26,7 +26,7 @@
 
 
       - name: Wait for rollout to complete
-        command: kubectl rollout status deployment/{{ deployment_name }} -n {{ namespace }} --timeout=60s
+        command: kubectl rollout status deployment/{{ deployment_name }} -n {{ namespace }} --timeout=180s
         register: rollout_result
         failed_when: "'successfully rolled out' not in rollout_result.stdout"
         changed_when: false
