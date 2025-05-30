@@ -12,7 +12,7 @@
       - name: Update the deployment image
         kubernetes.core.k8s:
           state: present
-          kubeconfig: "/home/rg/.kube/devops-microk8s"
+          kubeconfig: "{{ansible_user_dir}}/.kube/devops-microk8s"
           namespace: "{{ namespace }}"
           kind: Deployment
           name: "{{ deployment_name }}"
