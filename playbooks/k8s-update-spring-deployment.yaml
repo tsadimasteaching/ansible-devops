@@ -26,7 +26,7 @@
 
 
       - name: Wait for rollout to complete
-        command: kubectl rollout status deployment/{{ deployment_name }} -n {{ namespace }} --timeout=s
+        command: kubectl rollout status deployment/{{ deployment_name }} -n {{ namespace }} --timeout=360s
         register: rollout_result
         environment:
           KUBECONFIG: "/var/lib/jenkins/.kube/devops-microk8s"
