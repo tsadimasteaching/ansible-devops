@@ -35,6 +35,7 @@
 
       - name: Get pods in deployment
         kubernetes.core.k8s_info:
+          kubeconfig: "/var/lib/jenkins/.kube/devops-microk8s"
           kind: Pod
           namespace: "{{ namespace }}"
           label_selectors:
