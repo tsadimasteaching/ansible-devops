@@ -89,7 +89,13 @@ install postgresql role
 ansible-galaxy install geerlingguy.postgresql
 ```
 
+## Kubernetes
 
+install python kubernetes
+```bash
+sudo apt install python3-kubernetes
+
+```
 ## Links
 * [apt module](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html)
 * [file module](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html)

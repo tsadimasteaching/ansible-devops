@@ -1,0 +1,48 @@
+---
+  - name: Update Kubernetes Deployment Image
+    hosts: localhost
+    gather_facts: no
+    vars:
+      namespace: default
+      deployment_name: spring-deployment
+      container_name: spring
+      new_image: "ghcr.io/tsadimas/ds-lab-2024:latest"
+
+    tasks:
+      - name: Update the deployment image
+        kubernetes.core.k8s:
+          state: present
+          kubeconfig: "/home/rg/.kube/devops-microk8s"
+          namespace: "{{ namespace }}"
+          kind: Deployment
+          name: "{{ deployment_name }}"
+          definition:
+            spec:
+              template:
+                spec:
+                  containers:
+                    - name: "{{ container_name }}"
+                      image: "{{ new_image }}"
+
+
+      - name: Wait for rollout to complete
+        command: kubectl rollout status deployment/{{ deployment_name }} -n {{ namespace }} --timeout=60s
+        register: rollout_result
+        failed_when: "'successfully rolled out' not in rollout_result.stdout"
+        changed_when: false
+
+      - name: Get pods in deployment
+        kubernetes.core.k8s_info:
+          kind: Pod
+          namespace: "{{ namespace }}"
+          label_selectors:
+            - "app={{ deployment_name }}"
+        register: pod_list
+
+      - name: Ensure all pods use the correct image
+        fail:
+          msg: "One or more pods do not have the updated image {{ new_image }}"
+        when: >
+          pod_list.resources | selectattr('status.phase', 'equalto', 'Running') |
+          selectattr('spec.containers', 'defined') |
+          reject('containers_all_use_image', new_image) | list | length > 0
