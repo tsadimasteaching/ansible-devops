@@ -7,7 +7,7 @@
     tasks:
       - name: install postgres  and pip packages
         apt:
-          name: postgresql, python3-pip
+          name: postgresql, python3-pip, python3-psycopg2
           state: present
           update_cache: yes
         tags:
