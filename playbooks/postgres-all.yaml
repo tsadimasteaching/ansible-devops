@@ -17,12 +17,10 @@
         state: present
         update_cache: yes
 
-    - name: "Install Python packages"
-      pip:
-        name: "{{ item }}"
+    - name: "Install psycopg2 (needed by community.postgresql modules)"
+      apt:
+        name: python3-psycopg2
         state: present
-      with_items:
-        - psycopg2-binary
 
     - name: Get Ubuntu version
       command: lsb_release -rs
@@ -47,7 +45,7 @@
   tasks:
     - name: check if postgres is initialized
       ansible.builtin.stat:
-        path: /var/lib/postgresql/14/main
+        path: "/var/lib/postgresql/{{ postgres_version }}/main"
       register: postgres_data
 
     - name: debug stat

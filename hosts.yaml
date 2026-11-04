@@ -29,3 +29,4 @@ dbservers:
           ansible_host: dbserver
       azure-db-server:
           ansible_host: devops-azure
+      devops-1:
