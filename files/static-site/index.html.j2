@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ site_name }}</title>
+  <style>
+    body { font-family: sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; color: #222; }
+    h1   { color: #009639; }
+    code { background: #f2f2f2; padding: 0.1rem 0.3rem; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>Hello from Ansible!</h1>
+  <p>Αυτή η σελίδα εγκαταστάθηκε με Ansible και σερβίρεται από nginx.</p>
+  <ul>
+    <li>Host (inventory): <code>{{ inventory_hostname }}</code></li>
+    <li>Hostname: <code>{{ ansible_facts['hostname'] }}</code></li>
+    <li>OS: <code>{{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}</code></li>
+    <li>Site root: <code>{{ site_root }}</code></li>
+  </ul>
+</body>
+</html>

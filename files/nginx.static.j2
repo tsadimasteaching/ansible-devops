@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+server {
+    listen {{ site_port }} default_server;
+    listen [::]:{{ site_port }} default_server;
+
+    server_name {{ site_server_name }};
+
+    root {{ site_root }};
+    index index.html;
+
+    access_log /var/log/nginx/{{ site_name }}.access.log;
+    error_log  /var/log/nginx/{{ site_name }}.error.log;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

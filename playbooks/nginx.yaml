@@ -1,0 +1,129 @@
+---
+# Εγκατάσταση nginx και ανέβασμα μιας απλής στατικής σελίδας.
+#
+# Εκτέλεση (από τη ρίζα του project):
+#   ansible-playbook -l appserver-vm playbooks/nginx.yaml
+#   ansible-playbook -l azure-db-server playbooks/nginx.yaml -e site_port=8081
+#
+# Έλεγχος:
+#   curl http://<ip του host>/
+
+- name: Install nginx and deploy a static html site
+  hosts: all
+  become: yes           # όλα τα tasks θέλουν root (apt, /etc/nginx, /var/www)
+
+  vars:
+    site_name: hello
+    site_root: "/var/www/{{ site_name }}"
+    site_port: 80
+    site_server_name: _                 # "_" = οποιοδήποτε hostname / IP
+
+  tasks:
+    # ---------------------------------------------------------------- install
+    - name: Install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: yes
+        cache_valid_time: 3600          # μην κάνεις apt update αν έγινε την τελευταία ώρα
+
+    # ------------------------------------------------------------ html σελίδα
+    - name: Create site root directory
+      ansible.builtin.file:
+        path: "{{ site_root }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: "0755"
+
+    - name: Copy index.html
+      ansible.builtin.template:
+        src: ../files/static-site/index.html.j2
+        dest: "{{ site_root }}/index.html"
+        owner: www-data
+        group: www-data
+        mode: "0644"
+      # στατικό αρχείο: δεν χρειάζεται reload, το nginx το διαβάζει σε κάθε request
+
+    # ------------------------------------------------------------ nginx conf
+    - name: Disable default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: reload nginx
+
+    - name: Copy nginx conf for the site
+      ansible.builtin.template:
+        src: ../files/nginx.static.j2
+        dest: "/etc/nginx/sites-available/{{ site_name }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload nginx
+
+    - name: Enable the site (symlink in sites-enabled)
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ site_name }}"
+        dest: "/etc/nginx/sites-enabled/{{ site_name }}"
+        state: link
+      notify: reload nginx
+
+    # --------------------------------------------------------------- service
+    # Έλεγχος σύνταξης ΠΡΙΝ το start: αλλιώς ένα λάθος στο conf εμφανίζεται
+    # μόνο ως "Job for nginx.service failed..." χωρίς την πραγματική αιτία.
+    - name: Validate nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Enable and start nginx service
+      block:
+        - name: Start nginx
+          ansible.builtin.service:
+            name: nginx
+            state: started
+            enabled: yes                # ξεκινά αυτόματα σε κάθε boot
+      rescue:
+        # Αν αποτύχει το start, δείξε το γιατί (συνήθως: η πόρτα είναι πιασμένη)
+        - name: Collect nginx failure details
+          ansible.builtin.shell: |
+            journalctl -u nginx -n 20 --no-pager
+            echo "--- ποιος ακούει στην {{ site_port }}:"
+            ss -ltnp 'sport = :{{ site_port }}'
+          register: nginx_diag
+          changed_when: false
+
+        - name: Show nginx failure details
+          ansible.builtin.fail:
+            msg: "{{ nginx_diag.stdout_lines }}"
+
+    # Εκτέλεσε τώρα τους handlers (αντί για το τέλος του play),
+    # ώστε ο έλεγχος που ακολουθεί να βλέπει τη νέα ρύθμιση.
+    - name: Apply pending nginx changes
+      ansible.builtin.meta: flush_handlers
+
+    # ---------------------------------------------------------------- έλεγχος
+    - name: Check that the site responds
+      ansible.builtin.uri:
+        url: "http://localhost:{{ site_port }}/"
+        return_content: yes
+      register: site_response
+      failed_when: "'Hello from Ansible' not in site_response.content"
+
+    - name: Show how to reach the site
+      ansible.builtin.debug:
+        msg: "OK -> http://{{ ansible_facts['default_ipv4']['address'] | default(inventory_hostname) }}:{{ site_port }}/"
+
+  handlers:
+    # Οι handlers τρέχουν με τη σειρά που ορίζονται εδώ και μόνο μία φορά,
+    # όσα tasks κι αν κάνουν notify. Και οι δύο ακούνε στο "reload nginx":
+    # πρώτα ελέγχεται η σύνταξη και μόνο αν περάσει γίνεται reload.
+    - name: Validate nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+      listen: reload nginx
+
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+      listen: reload nginx

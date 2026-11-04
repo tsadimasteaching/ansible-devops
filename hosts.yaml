@@ -6,6 +6,11 @@ control:
     control-vm:
       ansible_host: control
 
+azurevms:
+  hosts:
+    devops-1:
+      ansible_host: devops-vm-1
+
 appservers:
     hosts:
       appserver-vm:
