@@ -64,19 +64,21 @@
       with_items:
         - postgresql
 
-    - name: "Create app database"
-      postgresql_db:
-        state: present
-        name: "{{ db.name }}"
-      become: yes
-      become_user: postgres
-
-
     - name: "Create db user"
       postgresql_user:
           state: present
           name: "{{ db.user }}"
           password: "{{ db.password }}"
+      become: yes
+      become_user: postgres
+
+    # On PostgreSQL 15+ only the database owner can create tables in the
+    # public schema, so the app user must own the database.
+    - name: "Create app database"
+      postgresql_db:
+        state: present
+        name: "{{ db.name }}"
+        owner: "{{ db.user }}"
       become: yes
       become_user: postgres
 
