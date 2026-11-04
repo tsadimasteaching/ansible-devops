@@ -28,9 +28,58 @@ ansible -m ping all <group-name>
 * run testing environment
 ```bash
 vagrant plugin install vagrant-hostmanager
+vagrant plugin install vagrant-libvirt   # only for the libvirt provider (Linux)
 cd vagrant
-vagrunt up
+vagrant up control   # first: creates the ssh key the other VMs need
+vagrant up
 vagrant ssh-config >> ~/.ssh/config
+```
+
+### libvirt provider
+The `Vagrantfile` uses **libvirt** (KVM) as the default provider instead of VirtualBox.
+* host requirements: `libvirt`, `qemu`, `virtiofsd` (for the shared `/vagrant` folder) and the `vagrant-libvirt` plugin
+* the VMs live in `qemu:///system`. To see them graphically use `virt-manager` (connect to *QEMU/KVM*, not *User session*), or from the CLI:
+```bash
+virsh -c qemu:///system list --all
+```
+
+### VirtualBox provider (alternative)
+If you prefer VirtualBox (e.g. on Windows / macOS, or if you already use it), the same `Vagrantfile` works:
+* install [VirtualBox](https://www.virtualbox.org/wiki/Downloads) (no extra Vagrant plugin is needed)
+* pass the provider when creating the VMs:
+```bash
+cd vagrant
+vagrant up control --provider=virtualbox
+vagrant up --provider=virtualbox
+```
+or set it once for your shell, so that every `vagrant` command uses it:
+```bash
+export VAGRANT_DEFAULT_PROVIDER=virtualbox    # Windows PowerShell: $env:VAGRANT_DEFAULT_PROVIDER="virtualbox"
+```
+* the provider is chosen when a VM is created. To switch provider, first destroy the existing VMs with `vagrant destroy -f`
+* VirtualBox and libvirt/KVM cannot run VMs at the same time on the same host
+
+### "Network is unreachable" inside the VMs (Docker + libvirt)
+If Docker runs on the host, it sets the iptables `FORWARD` policy to `DROP`, which also blocks traffic from the libvirt bridges (`virbr*`). The VMs then have no internet access and may not be able to reach each other.
+* check:
+```bash
+sudo iptables -S FORWARD | head -3    # "-P FORWARD DROP" means this is the problem
+```
+* permanent fix (Docker >= 28): tell Docker not to change the policy
+```bash
+sudo mkdir -p /etc/docker
+echo '{ "ip-forward-no-drop": true }' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
+sudo iptables -P FORWARD ACCEPT       # resets the DROP policy that is already active
+```
+* quick fix until the next reboot (alternative):
+```bash
+sudo iptables -I DOCKER-USER -i virbr+ -j ACCEPT
+sudo iptables -I DOCKER-USER -o virbr+ -j ACCEPT
+```
+* verify from inside a VM:
+```bash
+vagrant ssh control -c 'ping -c2 8.8.8.8'
 ```
 * run a playbook
 ```bash

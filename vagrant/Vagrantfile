@@ -8,16 +8,22 @@ Vagrant.configure("2") do |config|
 
   config.vm.box = "cloud-image/ubuntu-24.04"
 
-  config.vm.provider :libvirt do |lv|
+  config.vm.provider :libvirt do |lv, override|
     lv.memory = 1024
     lv.cpus = 1
     # virtiofs χρειάζεται shared memory
     lv.memorybacking :access, mode: "shared"
+    # Αμφίδρομος φάκελος /vagrant (το control γράφει το control.pub, οι άλλοι το διαβάζουν).
+    # Το default του libvirt είναι rsync, που αντιγράφει μόνο host -> guest.
+    override.vm.synced_folder ".", "/vagrant", type: "virtiofs"
   end
 
-  # Αμφίδρομος φάκελος /vagrant (το control γράφει το control.pub, οι άλλοι το διαβάζουν).
-  # Το default του libvirt είναι rsync, που αντιγράφει μόνο host -> guest.
-  config.vm.synced_folder ".", "/vagrant", type: "virtiofs"
+  # VirtualBox: vagrant up --provider=virtualbox
+  # (ο /vagrant είναι ήδη αμφίδρομος, με vboxsf)
+  config.vm.provider :virtualbox do |vb|
+    vb.memory = 1024
+    vb.cpus = 1
+  end
 
   config.vm.define "control", primary: true do |h|
     h.vm.hostname = "control"
