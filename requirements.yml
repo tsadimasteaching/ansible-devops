@@ -1,0 +1,17 @@
+---
+# Εξαρτήσεις του project από το Ansible Galaxy (roles και collections).
+#   ansible-galaxy install -r requirements.yml
+# Τα roles μπαίνουν στο ./roles (πρώτο path του roles_path στο ansible.cfg),
+# τα collections στο ~/.ansible/collections.
+roles:
+  - name: geerlingguy.postgresql      # playbooks/postgres-from-role.yaml
+    version: "4.0.0"
+
+collections:
+  - name: community.postgresql        # postgresql_db, postgresql_user, postgresql_pg_hba
+    version: ">=4.0.0"
+  - name: community.docker            # docker_compose_v2 (spring-vue-docker.yaml)
+    version: ">=4.0.0"
+  - name: kubernetes.core             # k8s, k8s_info (k8s-update-spring-deployment.yaml)
+    version: ">=5.0.0"
+  - name: ansible.posix               # authorized_key

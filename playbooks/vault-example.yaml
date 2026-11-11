@@ -1,0 +1,49 @@
+---
+# Παράδειγμα ansible-vault: secrets κρυπτογραφημένα μέσα στο git.
+# Τρέχει τοπικά, δεν χρειάζεται κάποιο VM.
+#
+#   ansible-playbook playbooks/vault-example.yaml --ask-vault-pass     # κωδικός: devops
+#
+# Δύο τρόποι:
+#   1. ολόκληρο αρχείο κρυπτογραφημένο: vars/vault-example.yaml
+#        ansible-vault view playbooks/vars/vault-example.yaml
+#   2. μία μόνο τιμή κρυπτογραφημένη, μέσα σε κανονικό YAML: vault_inline_token παρακάτω
+#        ansible-vault encrypt_string 'inline-secret-456' --name vault_inline_token
+- name: Use secrets encrypted with ansible-vault
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  # 1. Το αρχείο αποκρυπτογραφείται αυτόματα, αν δοθεί ο κωδικός του vault
+  vars_files:
+    - vars/vault-example.yaml
+
+  vars:
+    # 2. Μία τιμή κρυπτογραφημένη με encrypt_string. Το υπόλοιπο αρχείο μένει αναγνώσιμο.
+    vault_inline_token: !vault |
+              $ANSIBLE_VAULT;1.1;AES256
+              38316438393166633761393130313431376533393033393438386465343232646666613662616333
+              3466636665353131613763323631366330663637623831300a376633663737313730346662323834
+              37323533653238323831623534343430663964356130353538336633316436303737613231386437
+              6363343131663036310a666234643765626131363662643463626132663462303137326336313966
+              61363136336634623339353839386136363364623533616261643162323637306139
+
+    # Τα playbooks και τα templates χρησιμοποιούν τα "κανονικά" ονόματα.
+    # Τα vault_* υπάρχουν μόνο για να φαίνεται από πού έρχεται η τιμή.
+    api_user: "{{ vault_api_user }}"
+    api_key: "{{ vault_api_key }}"
+    api_token: "{{ vault_inline_token }}"
+
+  tasks:
+    - name: Show which secrets were decrypted (without printing them)
+      ansible.builtin.debug:
+        msg: >-
+          user={{ api_user }},
+          api_key has {{ api_key | length }} characters,
+          api_token has {{ api_token | length }} characters
+
+    # no_log: η έξοδος του task κρύβεται (και σε -v), ώστε να μη φαίνεται το secret
+    - name: A task that uses the secret, with its output hidden
+      ansible.builtin.debug:
+        msg: "Authorization: Bearer {{ api_token }}"
+      no_log: true

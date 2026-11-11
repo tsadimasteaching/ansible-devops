@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="640" viewBox="0 0 1000 640" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .file { font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 13px; font-weight: bold; fill: #222; }
+      .mono { font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 12px; fill: #333; }
+      .desc { font-size: 12px; fill: #555; }
+      .tag  { font-size: 11px; font-weight: bold; text-anchor: end; }
+      .dir  { font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 13px; font-weight: bold; fill: #444; }
+      .h1   { font-size: 20px; font-weight: bold; fill: #222; }
+      .h2   { font-size: 15px; font-weight: bold; fill: #222; }
+    </style>
+  </defs>
+
+  <!-- background (the image must be readable on dark pages too) -->
+  <rect x="0" y="0" width="1000" height="640" rx="10" fill="#ffffff" stroke="#d0d0d0"/>
+  <text x="24" y="36" class="h1">Where variables live, and who gets them</text>
+
+  <!-- ===================== left: the directories ===================== -->
+  <text x="24" y="62" class="h2">The files</text>
+
+  <!-- hosts.yaml -->
+  <rect x="36" y="76" width="528" height="42" rx="5" fill="#f2f2f2"/>
+  <rect x="36" y="76" width="6" height="42" rx="2" fill="#888888"/>
+  <text x="52" y="93" class="file">hosts.yaml</text>
+  <text x="556" y="93" class="tag" fill="#666666">inventory</text>
+  <text x="52" y="110" class="desc">which host belongs to which group: dbservers, appservers, frontservers</text>
+
+  <text x="36" y="140" class="dir">group_vars/</text>
+
+  <!-- all.yaml -->
+  <rect x="56" y="148" width="508" height="42" rx="5" fill="#e8ecfb"/>
+  <rect x="56" y="148" width="6" height="42" rx="2" fill="#5468c9"/>
+  <text x="72" y="165" class="file">all.yaml</text>
+  <text x="556" y="165" class="tag" fill="#5468c9">EVERY HOST</text>
+  <text x="72" y="182" class="desc">needed by more than one group: db.name, db.user, db.password, db_port, app_port</text>
+
+  <!-- dbservers.yaml -->
+  <rect x="56" y="196" width="508" height="42" rx="5" fill="#e3f4ec"/>
+  <rect x="56" y="196" width="6" height="42" rx="2" fill="#2f9e6e"/>
+  <text x="72" y="213" class="file">dbservers.yaml</text>
+  <text x="556" y="213" class="tag" fill="#2f9e6e">HOSTS OF GROUP dbservers</text>
+  <text x="72" y="230" class="desc">postgres_version (from the Ubuntu version), postgres_conf_dir, db_allowed_cidr</text>
+
+  <!-- appservers.yaml -->
+  <rect x="56" y="244" width="508" height="42" rx="5" fill="#e3f4ec"/>
+  <rect x="56" y="244" width="6" height="42" rx="2" fill="#2f9e6e"/>
+  <text x="72" y="261" class="file">appservers.yaml</text>
+  <text x="556" y="261" class="tag" fill="#2f9e6e">HOSTS OF GROUP appservers</text>
+  <text x="72" y="278" class="desc">spring_*, app_dir, app_jar, app_env, db_host: dbserver  (the default)</text>
+
+  <!-- frontservers.yaml -->
+  <rect x="56" y="292" width="508" height="42" rx="5" fill="#e3f4ec"/>
+  <rect x="56" y="292" width="6" height="42" rx="2" fill="#2f9e6e"/>
+  <text x="72" y="309" class="file">frontservers.yaml</text>
+  <text x="556" y="309" class="tag" fill="#2f9e6e">HOSTS OF GROUP frontservers</text>
+  <text x="72" y="326" class="desc">frontend_*, node_version, nvm_version, backend_server_url</text>
+
+  <text x="36" y="356" class="dir">host_vars/</text>
+
+  <!-- devops-1.yaml -->
+  <rect x="56" y="364" width="508" height="42" rx="5" fill="#fcecdf"/>
+  <rect x="56" y="364" width="6" height="42" rx="2" fill="#d06a1c"/>
+  <text x="72" y="381" class="file">devops-1.yaml</text>
+  <text x="556" y="381" class="tag" fill="#d06a1c">ONLY HOST devops-1</text>
+  <text x="72" y="398" class="desc">only what differs: db_host: localhost  (the database is on the same VM)</text>
+
+  <!-- gcloud-app-server.yaml -->
+  <rect x="56" y="412" width="508" height="42" rx="5" fill="#fcecdf"/>
+  <rect x="56" y="412" width="6" height="42" rx="2" fill="#d06a1c"/>
+  <text x="72" y="429" class="file">gcloud-app-server.yaml</text>
+  <text x="556" y="429" class="tag" fill="#d06a1c">ONLY HOST gcloud-app-server</text>
+  <text x="72" y="446" class="desc">db_host: 4.211.249.239  (the database is in another cloud)</text>
+
+  <text x="36" y="476" class="dir">playbooks/</text>
+
+  <!-- play vars -->
+  <rect x="56" y="484" width="508" height="42" rx="5" fill="#efe7f9"/>
+  <rect x="56" y="484" width="6" height="42" rx="2" fill="#7d4fc0"/>
+  <text x="72" y="501" class="file">spring.yaml  →  vars:</text>
+  <text x="556" y="501" class="tag" fill="#7d4fc0">ONLY THIS PLAYBOOK</text>
+  <text x="72" y="518" class="desc">java_package, maven_version, app_start_timeout</text>
+
+  <!-- -e -->
+  <rect x="36" y="540" width="528" height="42" rx="5" fill="#f9e3e6"/>
+  <rect x="36" y="540" width="6" height="42" rx="2" fill="#c03d4f"/>
+  <text x="52" y="557" class="file">ansible-playbook ... -e name=value</text>
+  <text x="556" y="557" class="tag" fill="#c03d4f">ONLY THIS RUN</text>
+  <text x="52" y="574" class="desc">command line, highest precedence, e.g. -e image_tag=abc123</text>
+
+  <text x="36" y="612" class="desc">Rule: put a value in the most general file that is correct for every host that uses it; override only what differs.</text>
+
+  <!-- ===================== right: example devops-1 ===================== -->
+  <line x1="590" y1="56" x2="590" y2="600" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="610" y="62" class="h2">Example: host devops-1</text>
+  <text x="610" y="82" class="desc">it is in groups appservers and dbservers, so it gets</text>
+  <text x="610" y="98" class="desc">all of these files, and for the same variable the upper one wins:</text>
+
+  <!-- precedence arrow -->
+  <line x1="624" y1="398" x2="624" y2="122" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="612" y="260" class="desc" transform="rotate(-90 612 260)" text-anchor="middle">more specific = wins</text>
+
+  <!-- -e (optional) -->
+  <rect x="640" y="116" width="336" height="48" rx="5" fill="#ffffff" stroke="#c03d4f" stroke-dasharray="5 4"/>
+  <text x="654" y="135" class="mono" fill="#c03d4f">-e db_host=10.0.0.5</text>
+  <text x="654" y="154" class="desc">would win over everything (not used here)</text>
+
+  <!-- host_vars -->
+  <rect x="640" y="172" width="336" height="48" rx="5" fill="#fcecdf" stroke="#d06a1c" stroke-width="2"/>
+  <text x="654" y="191" class="mono">host_vars/devops-1.yaml</text>
+  <text x="654" y="210" class="mono" font-weight="bold">db_host: localhost</text>
+  <text x="966" y="210" class="tag" fill="#d06a1c">✔ WINS</text>
+
+  <!-- appservers -->
+  <rect x="640" y="228" width="336" height="48" rx="5" fill="#e3f4ec"/>
+  <text x="654" y="247" class="mono">group_vars/appservers.yaml</text>
+  <text x="654" y="266" class="mono" fill="#888">db_host: dbserver</text>
+  <line x1="652" y1="262" x2="782" y2="262" stroke="#888" stroke-width="1.5"/>
+  <text x="966" y="266" class="tag" fill="#888">overridden</text>
+
+  <!-- dbservers -->
+  <rect x="640" y="284" width="336" height="48" rx="5" fill="#e3f4ec"/>
+  <text x="654" y="303" class="mono">group_vars/dbservers.yaml</text>
+  <text x="654" y="322" class="desc">postgres_version, db_allowed_cidr</text>
+
+  <!-- all -->
+  <rect x="640" y="340" width="336" height="48" rx="5" fill="#e8ecfb"/>
+  <text x="654" y="359" class="mono">group_vars/all.yaml</text>
+  <text x="654" y="378" class="desc">db.*, db_port, app_port</text>
+
+  <!-- merge arrow -->
+  <line x1="808" y1="392" x2="808" y2="418" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="820" y="410" class="desc">merged</text>
+
+  <!-- result -->
+  <rect x="640" y="424" width="336" height="158" rx="5" fill="#fafafa" stroke="#555" stroke-width="1.5"/>
+  <text x="654" y="446" class="mono" font-weight="bold">ansible-inventory --host devops-1</text>
+  <text x="654" y="470" class="mono">db_host: localhost</text>
+  <text x="966" y="470" class="tag" fill="#d06a1c">host_vars</text>
+  <text x="654" y="490" class="mono">app_jar: ds-lab-2024-...jar</text>
+  <text x="966" y="490" class="tag" fill="#2f9e6e">appservers</text>
+  <text x="654" y="510" class="mono">db_allowed_cidr: 0.0.0.0/0</text>
+  <text x="966" y="510" class="tag" fill="#2f9e6e">dbservers</text>
+  <text x="654" y="530" class="mono">db.name: appdb</text>
+  <text x="966" y="530" class="tag" fill="#5468c9">all</text>
+  <text x="654" y="550" class="mono">app_port: 8080</text>
+  <text x="966" y="550" class="tag" fill="#5468c9">all</text>
+  <text x="654" y="572" class="desc" font-size="11">the final values, and where each one came from</text>
+</svg>

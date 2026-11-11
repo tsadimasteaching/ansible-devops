@@ -1,6 +1,39 @@
-# Project set up
+# Ansible DevOps
+
+Ansible project for the DevOps course: it deploys a **PostgreSQL** database, a **Spring Boot** backend and a **Vue.js** frontend
+on Vagrant VMs or cloud VMs. The step-by-step guide for building such a project from scratch (in Greek) is in [ansible_project_setup.md](ansible_project_setup.md).
+
+## Contents
+1. [Project structure](#project-structure)
+2. [Inventory](#inventory)
+3. [Development environment with Vagrant](#development-environment-with-vagrant)
+4. [Running the playbooks](#running-the-playbooks)
+5. [Where to put variables](#where-to-put-variables)
+6. [Inspect inventory and variables](#inspect-inventory-and-variables)
+7. [Vault](#vault)
+8. [Roles](#roles)
+9. [Kubernetes](#kubernetes)
+10. [Links](#links)
+
+## Project structure
+```
+.
+├── ansible.cfg           # defaults: inventory, roles_path, ssh settings
+├── hosts.yaml            # inventory: groups dbservers, appservers, frontservers, ...
+├── group_vars/           # variables per group (all.yaml = every host)
+├── host_vars/            # variables of one host, only what differs
+├── playbooks/            # the playbooks
+│   ├── tasks/            #   task lists shared by playbooks (import_tasks / include_tasks)
+│   └── vars/             #   vars files (vault-example.yaml is encrypted)
+├── files/                # templates (*.j2) and static files used by the playbooks
+├── requirements.yml      # roles and collections from Ansible Galaxy
+├── docs/                 # pictures used in this README
+└── vagrant/              # Vagrantfile for the local VMs
+```
+
+## Inventory
 * create an inventory file (e.g. hosts or hosts.yaml) that holds the remote hosts that ansible will handle.
-* Example entry is
+* example entry:
 ```yaml
 webserver: # <-- group
   hosts: # <-- List of hosts in group
@@ -15,17 +48,124 @@ webserver: # <-- group
   vars:  # <-- common variables in this group
     ansible_python_interpreter: /usr/bin/python3
 ```
-* to test if all hosts are accesible, run
+* to test if all hosts are accessible, run
 ```bash
 ansible -m ping all
 ```
-* to test if a group of hosts are accesible, run
+* to test if a group of hosts are accessible, run
 ```bash
 ansible -m ping <group-name>
 ```
 
-# Where to put variables
+### Ignore host_key_checking
+Add this line to `ansible.cfg` in the `[defaults]` section (already done in this project), so that ssh does not ask "Are you sure you want to continue connecting?" for VMs that are created again and again:
+```ini
+host_key_checking = false
+```
+Links:
+* [Managing host key checking](https://docs.ansible.com/ansible/latest/user_guide/connection_details.html)
+
+## Development environment with Vagrant
+* run testing environment
+```bash
+vagrant plugin install vagrant-hostmanager
+vagrant plugin install vagrant-libvirt   # only for the libvirt provider (Linux)
+cd vagrant
+vagrant up control   # first: creates the ssh key the other VMs need
+vagrant up
+vagrant ssh-config >> ~/.ssh/config
+```
+
+### libvirt provider
+The `Vagrantfile` uses **libvirt** (KVM) as the default provider instead of VirtualBox.
+* host requirements: `libvirt`, `qemu`, `virtiofsd` (for the shared `/vagrant` folder) and the `vagrant-libvirt` plugin
+* the VMs live in `qemu:///system`. To see them graphically use `virt-manager` (connect to *QEMU/KVM*, not *User session*), or from the CLI:
+```bash
+virsh -c qemu:///system list --all
+```
+
+### VirtualBox provider (alternative)
+If you prefer VirtualBox (e.g. on Windows / macOS, or if you already use it), the same `Vagrantfile` works:
+* install [VirtualBox](https://www.virtualbox.org/wiki/Downloads) (no extra Vagrant plugin is needed)
+* pass the provider when creating the VMs:
+```bash
+cd vagrant
+vagrant up control --provider=virtualbox
+vagrant up --provider=virtualbox
+```
+or set it once for your shell, so that every `vagrant` command uses it:
+```bash
+export VAGRANT_DEFAULT_PROVIDER=virtualbox    # Windows PowerShell: $env:VAGRANT_DEFAULT_PROVIDER="virtualbox"
+```
+* the provider is chosen when a VM is created. To switch provider, first destroy the existing VMs with `vagrant destroy -f`
+* VirtualBox and libvirt/KVM cannot run VMs at the same time on the same host
+
+### "Network is unreachable" inside the VMs (Docker + libvirt)
+If Docker runs on the host, it sets the iptables `FORWARD` policy to `DROP`, which also blocks traffic from the libvirt bridges (`virbr*`). The VMs then have no internet access and may not be able to reach each other.
+* check:
+```bash
+sudo iptables -S FORWARD | head -3    # "-P FORWARD DROP" means this is the problem
+```
+* permanent fix (Docker >= 28): tell Docker not to change the policy
+```bash
+sudo mkdir -p /etc/docker
+echo '{ "ip-forward-no-drop": true }' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
+sudo iptables -P FORWARD ACCEPT       # resets the DROP policy that is already active
+```
+* quick fix until the next reboot (alternative):
+```bash
+sudo iptables -I DOCKER-USER -i virbr+ -j ACCEPT
+sudo iptables -I DOCKER-USER -o virbr+ -j ACCEPT
+```
+* verify from inside a VM:
+```bash
+vagrant ssh control -c 'ping -c2 8.8.8.8'
+```
+
+Links:
+* [Vagrant Quick start](https://learn.hashicorp.com/collections/vagrant/getting-started)
+
+## Running the playbooks
+| Playbook | `hosts:` | What it does |
+|---|---|---|
+| `postgres.yaml` | dbservers | PostgreSQL, application database and user |
+| `postgres-16.yaml` | dbservers | the same with `lineinfile` and `block`/`rescue` |
+| `postgres-from-role.yaml` | dbservers | the same with the Galaxy role `geerlingguy.postgresql` (see [Roles](#roles)) |
+| `spring.yaml` | appservers | Spring Boot backend as a systemd service, behind nginx |
+| `vuejs.yaml` | frontservers | Vue.js frontend, built and served by nginx |
+| `spring-vue-docker.yaml` | appservers | the whole stack with docker compose |
+| `docker.yaml` | all | Docker engine and compose plugin |
+| `nginx.yaml` | all | nginx with a static html page |
+| `hostvars_and_facts.yml` | all | print the variables and facts of a host |
+| `vault-example.yaml` | localhost | ansible-vault example (see [Vault](#vault)) |
+| `k8s-update-spring-deployment.yaml` | localhost | update the image of a Kubernetes deployment |
+
+* run a playbook
+```bash
+ansible-playbook -l dbserver-vm playbooks/postgres.yaml
+```
+* full stack on the Vagrant VMs (database -> spring backend -> vue frontend)
+```bash
+ansible-playbook -l dbserver-vm  playbooks/postgres.yaml    # group dbservers
+ansible-playbook -l appserver-vm playbooks/spring.yaml      # group appservers
+ansible-playbook -l frontend-vm  playbooks/vuejs.yaml       # group frontservers
+```
+Each playbook targets its own group (`hosts:`), so `-l` only limits the run to the Vagrant VMs and leaves out the cloud hosts of the same group.
+
+## Where to put variables
 The same value can be written in many places. We follow a few simple rules, so that every value is defined **once**, in the place where it is easiest to find and change.
+
+![Where variables live in this project and how devops-1 gets its values](docs/variables.svg)
+
+How to read the picture:
+* **Left: the files.** The color shows **who gets** the variables of each file:
+  every host (`group_vars/all.yaml`), the hosts of one group (`group_vars/<group>.yaml`),
+  one host (`host_vars/<host>.yaml`), one playbook (`vars:`) or one run (`-e`).
+  The file name is what connects it to the hosts: `group_vars/appservers.yaml` is read for every host of the group `appservers` in `hosts.yaml`.
+* **Right: one host.** `devops-1` is in two groups, so Ansible reads `all.yaml`, `appservers.yaml`, `dbservers.yaml` **and** `host_vars/devops-1.yaml`, and merges them.
+  When the same variable is in more than one file, the **more specific** one wins: `db_host` is `dbserver` for all appservers, but `localhost` for `devops-1`.
+* **Bottom right: the result**, which you can see yourself with `ansible-inventory --host devops-1` (see [Inspect inventory and variables](#inspect-inventory-and-variables)).
 
 ### The main idea
 1. **Group hosts by role**, not by provider or location: `dbservers`, `appservers`, `frontservers`.
@@ -102,8 +242,7 @@ Such variables need facts (`gather_facts`, enabled by default). That is also why
 | `vars:` in a playbook | that play | values used only by that playbook, e.g. `java_package` in `spring.yaml` |
 | `-e name=value` | that run | highest precedence, e.g. `-e image_tag=abc123` |
 
-
-# Inspect inventory and variables
+## Inspect inventory and variables
 Before running a playbook it is useful to check **which hosts** it will run on and **which values** the variables will have.
 Variables come from many places (`hosts.yaml`, `group_vars/`, `host_vars/`, play `vars:`, `-e`), so it is easy to end up with a value you did not expect.
 
@@ -190,134 +329,270 @@ ansible-config dump --only-changed
 ansible-playbook -l devops-1 playbooks/spring.yaml -vv
 ```
 
-# Run development environment with Vagrant
-* run testing environment
-```bash
-vagrant plugin install vagrant-hostmanager
-vagrant plugin install vagrant-libvirt   # only for the libvirt provider (Linux)
-cd vagrant
-vagrant up control   # first: creates the ssh key the other VMs need
-vagrant up
-vagrant ssh-config >> ~/.ssh/config
-```
-
-### libvirt provider
-The `Vagrantfile` uses **libvirt** (KVM) as the default provider instead of VirtualBox.
-* host requirements: `libvirt`, `qemu`, `virtiofsd` (for the shared `/vagrant` folder) and the `vagrant-libvirt` plugin
-* the VMs live in `qemu:///system`. To see them graphically use `virt-manager` (connect to *QEMU/KVM*, not *User session*), or from the CLI:
-```bash
-virsh -c qemu:///system list --all
-```
-
-### VirtualBox provider (alternative)
-If you prefer VirtualBox (e.g. on Windows / macOS, or if you already use it), the same `Vagrantfile` works:
-* install [VirtualBox](https://www.virtualbox.org/wiki/Downloads) (no extra Vagrant plugin is needed)
-* pass the provider when creating the VMs:
-```bash
-cd vagrant
-vagrant up control --provider=virtualbox
-vagrant up --provider=virtualbox
-```
-or set it once for your shell, so that every `vagrant` command uses it:
-```bash
-export VAGRANT_DEFAULT_PROVIDER=virtualbox    # Windows PowerShell: $env:VAGRANT_DEFAULT_PROVIDER="virtualbox"
-```
-* the provider is chosen when a VM is created. To switch provider, first destroy the existing VMs with `vagrant destroy -f`
-* VirtualBox and libvirt/KVM cannot run VMs at the same time on the same host
-
-### "Network is unreachable" inside the VMs (Docker + libvirt)
-If Docker runs on the host, it sets the iptables `FORWARD` policy to `DROP`, which also blocks traffic from the libvirt bridges (`virbr*`). The VMs then have no internet access and may not be able to reach each other.
-* check:
-```bash
-sudo iptables -S FORWARD | head -3    # "-P FORWARD DROP" means this is the problem
-```
-* permanent fix (Docker >= 28): tell Docker not to change the policy
-```bash
-sudo mkdir -p /etc/docker
-echo '{ "ip-forward-no-drop": true }' | sudo tee /etc/docker/daemon.json
-sudo systemctl restart docker
-sudo iptables -P FORWARD ACCEPT       # resets the DROP policy that is already active
-```
-* quick fix until the next reboot (alternative):
-```bash
-sudo iptables -I DOCKER-USER -i virbr+ -j ACCEPT
-sudo iptables -I DOCKER-USER -o virbr+ -j ACCEPT
-```
-* verify from inside a VM:
-```bash
-vagrant ssh control -c 'ping -c2 8.8.8.8'
-```
-* run a playbook
-```bash
-ansible-playbook -l dbserver-vm playbooks/postgres.yaml
-```
-* full stack on the Vagrant VMs (database -> spring backend -> vue frontend)
-```bash
-ansible-playbook -l dbserver-vm  playbooks/postgres.yaml    # group dbservers
-ansible-playbook -l appserver-vm playbooks/spring.yaml      # group appservers
-ansible-playbook -l frontend-vm  playbooks/vuejs.yaml       # group frontservers
-```
-Each playbook targets its own group (`hosts:`), so `-l` only limits the run to the Vagrant VMs and leaves out the cloud hosts of the same group.
-Links:
-* [Vagrant Quick start](https://learn.hashicorp.com/collections/vagrant/getting-started)
-
-## Vault
-* create a file that holds the **secret**
-```bash
-touch playbooks/vars/api_key.yml
-```
-* encrypt the file
-```bash
-ansible-vault encrypt playbooks/vars/api_key.yml
-```
-* run task that needs this file
-```bash
-ansible-playbook playbooks/use-api-key.yaml --ask-vault-pass
-```
-and you will be asked to provide the password
-* edit the encrypoted file with
-```bash
-ansible-vault edit playbooks/vars/api_key.ym
-```
-* use stored password to decrypt
-  create a file that holds the password with 600 permissions
-```bash
-vim ~/.ansible/vault_pass.txt
-chmod 600 ~/.ansible/vault_pass.txt
-```
-```bash
-ansible-playbook playbooks/use-api-key.yaml --vault-password-file  ~/.ansible/vault_pass.txt
-```
-Links:
-* [Encrypting content with Ansible Vault](https://docs.ansible.com/ansible/latest/user_guide/vault.html)
-## Ignore host_key_checking
-
-add this line to ``ansible.cfg`` in [defaults] section
-```ini
-host_key_checking = false
-```
-Links:
-* [Managing host key checking](https://docs.ansible.com/ansible/latest/user_guide/connection_details.html)
-
-
-## Get host basic info
+### Get host basic info
 ```bash
 ansible-playbook -l <hostname> playbooks/hostvars_and_facts.yml
 ```
 
-## postgres from ansible-galaxy
-install postgresql role
+## Vault
+`ansible-vault` encrypts secrets (passwords, api keys, private keys) so that they can be **committed to git** together with the rest of the project.
+Only who has the **vault password** can decrypt them. Ansible decrypts them automatically while a playbook runs.
+
+### Try it: `playbooks/vault-example.yaml`
+A small playbook that runs locally (no VM needed) and uses both ways of encrypting. The vault password of the example is `devops`.
 ```bash
-ansible-galaxy install geerlingguy.postgresql
+ansible-playbook playbooks/vault-example.yaml --ask-vault-pass
 ```
+```
+ok: [localhost] => {
+    "msg": "user=$REDACTED$, api_key has 18 characters, api_token has 17 characters"
+}
+```
+* without the password it fails: `Attempting to decrypt but no vault secrets found`
+* recent ansible-core versions (e.g. 2.22) print values that come from the vault as `$REDACTED$`
+
+### 1. Encrypt a whole file
+Good for a file that holds only secrets (e.g. `playbooks/vars/vault-example.yaml`).
+```bash
+ansible-vault create playbooks/vars/secrets.yaml     # new file, opens the editor
+ansible-vault encrypt playbooks/vars/secrets.yaml    # existing plain file -> encrypted
+ansible-vault view playbooks/vars/secrets.yaml       # print the decrypted content
+ansible-vault edit playbooks/vars/secrets.yaml       # decrypt, open the editor, encrypt again on save
+ansible-vault decrypt playbooks/vars/secrets.yaml    # back to plain text (be careful not to commit it)
+ansible-vault rekey playbooks/vars/secrets.yaml      # change the vault password
+```
+The encrypted file looks like this, so `git diff` and `grep` cannot show what changed:
+```
+$ANSIBLE_VAULT;1.1;AES256
+34656363656537346337333631313365613363643765623464366364316532306561616337386363
+...
+```
+Use it from a playbook with `vars_files:`, or put it in `group_vars/` / `host_vars/` (see below).
+
+### 2. Encrypt only one value
+Good when the rest of the file should stay readable.
+```bash
+ansible-vault encrypt_string 'inline-secret-456' --name vault_inline_token
+```
+Paste the output in any vars file or `vars:` section:
+```yaml
+vault_inline_token: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          3761343539666561...
+```
+To see the value again, give the `$ANSIBLE_VAULT...` lines, without the indentation, to `ansible-vault decrypt`
+(`debug` does not help here, it prints `$REDACTED$`):
+```bash
+sed -n '/\$ANSIBLE_VAULT/,$p' file-with-only-this-variable.yaml | tr -d ' ' | ansible-vault decrypt
+```
+
+### How to give the vault password
+| Way | Command / setting | When |
+|---|---|---|
+| ask every time | `--ask-vault-pass` (or `-J`) | interactive use |
+| file | `--vault-password-file ~/.ansible/vault_pass.txt` | to avoid typing it |
+| file, always | `vault_password_file = ~/.ansible/vault_pass.txt` in `[defaults]` of `ansible.cfg` | every run needs it |
+| file, from the environment | `export ANSIBLE_VAULT_PASSWORD_FILE=~/.ansible/vault_pass.txt` | CI/CD (Jenkins, GitHub Actions) |
+
+The password file holds only the password, it is readable only by you and it is **never** committed:
+```bash
+echo 'devops' > ~/.ansible/vault_pass.txt
+chmod 600 ~/.ansible/vault_pass.txt
+```
+If the password is lost, the encrypted data cannot be recovered.
+
+### Pattern: secrets in `group_vars` with the `vault_` prefix
+An encrypted file cannot be searched, so we do not encrypt the normal vars file. Instead `group_vars/<group>` becomes a **directory** with two files:
+```
+group_vars/all/
+├── vars.yaml     # plain, readable: all variables, secrets point to vault_*
+└── vault.yaml    # encrypted with ansible-vault: only the vault_* values
+```
+```yaml
+# group_vars/all/vars.yaml
+db:
+  name: appdb
+  user: appuser
+  password: "{{ vault_db_password }}"
+```
+```yaml
+# group_vars/all/vault.yaml   (ansible-vault create group_vars/all/vault.yaml)
+vault_db_password: apppassword
+```
+* `grep -r db_password` still finds where the password is used and where it comes from
+* the playbooks do not change: they still use `db.password`
+* Ansible reads every file in `group_vars/all/`, so the split is invisible to the playbooks
+* every command that loads this inventory now needs the vault password (`--ask-vault-pass`), even `ansible -m ping` and `ansible-inventory --host`
+
+This project keeps `db.password` in plain text in `group_vars/all.yaml`, so that the playbooks run without a vault password in the lab.
+
+### Keep secrets out of the output
+* `no_log: true` on a task hides its arguments and result, also with `-v` (see the second task of `vault-example.yaml`)
+* use it on tasks that print or register secrets, e.g. `uri` with an `Authorization` header, or `shell` with a password on the command line
+
+### More than one password: vault IDs
+E.g. a different password for development and production. The label is written in the encrypted data:
+```bash
+ansible-vault encrypt_string --vault-id prod@prompt 'S3cr3t' --name vault_db_password
+#   $ANSIBLE_VAULT;1.2;AES256;prod
+ansible-playbook site.yaml --vault-id dev@~/.ansible/dev_pass.txt --vault-id prod@prompt
+```
+
+Links:
+* [Protecting sensitive data with Ansible Vault](https://docs.ansible.com/ansible/latest/vault_guide/index.html)
+* [Organizing host and group variables (directories in group_vars)](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html#organizing-host-and-group-variables)
+
+## Roles
+A **role** is a reusable package of tasks, together with the handlers, templates, files and default variables they need.
+A playbook then only says **which roles run on which hosts**. Think of a role as a function and of its variables as the function arguments.
+
+When to write a role:
+* the same steps appear in more than one playbook (e.g. "install nginx, copy a site config, enable it, reload" is in `nginx.yaml`, `spring.yaml` and `vuejs.yaml`)
+* you want to reuse it in other projects, or share it (Ansible Galaxy)
+* a playbook became too long to read
+
+### Structure
+```bash
+ansible-galaxy role init roles/nginx_site
+```
+```
+roles/nginx_site/
+├── defaults/main.yml   # variables with default values: the "arguments" of the role (lowest precedence)
+├── vars/main.yml       # internal constants of the role (high precedence, not meant to be overridden)
+├── tasks/main.yml      # the tasks, run in order
+├── handlers/main.yml   # handlers, e.g. "reload nginx"
+├── templates/          # Jinja2 templates: template: src=site.conf.j2 looks here
+├── files/              # static files: copy: src=index.html looks here
+├── meta/main.yml       # author, supported platforms, dependencies on other roles
+├── README.md           # which variables the role expects
+└── tests/              # a small inventory and playbook to try the role
+```
+Only `tasks/main.yml` is required; delete the folders you do not use.
+Inside a role, `src:` of `template`/`copy` is found **relative to the role** (`templates/`, `files/`), not with `../files/` as in our playbooks.
+
+### Example: the nginx part of the playbooks as a role
+```yaml
+# roles/nginx_site/defaults/main.yml: what the user of the role can change
+nginx_site_name: default_site
+nginx_site_template: site.conf.j2
+```
+```yaml
+# roles/nginx_site/tasks/main.yml
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Copy the site configuration
+  ansible.builtin.template:
+    src: "{{ nginx_site_template }}"
+    dest: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+    mode: "0644"
+  notify: reload nginx
+
+- name: Enable the site
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ nginx_site_name }}"
+    state: link
+  notify: reload nginx
+
+- name: Disable the default site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: reload nginx
+```
+```yaml
+# roles/nginx_site/handlers/main.yml
+- name: reload nginx
+  ansible.builtin.shell: nginx -t && systemctl reload nginx
+```
+The playbooks then only pass the arguments:
+```yaml
+- hosts: appservers
+  become: true
+  roles:
+    - role: nginx_site
+      vars:
+        nginx_site_name: spring
+        nginx_site_template: nginx.http.j2
+```
+Prefix the variables of a role with the role name (`nginx_site_*`), so they do not collide with the variables of the project or of other roles.
+
+### Three ways to use a role in a playbook
+| Way | When it runs | Use it for |
+|---|---|---|
+| `roles:` section | after `pre_tasks`, **before** `tasks` | the main work of the play |
+| `ansible.builtin.import_role` (a task) | where you put it; **static**, loaded when the playbook is read | a role in the middle of other tasks; its tags/`--list-tasks` are visible |
+| `ansible.builtin.include_role` (a task) | where you put it; **dynamic**, loaded when it is reached | a role with `when:` or `loop:` |
+```yaml
+tasks:
+  - name: Configure the spring site
+    ansible.builtin.include_role:
+      name: nginx_site
+    vars:
+      nginx_site_name: spring
+      nginx_site_template: nginx.http.j2
+    when: "'appservers' in group_names"
+```
+
+### Variables of roles
+* **`defaults/main.yml`** has the **lowest** precedence of all: anything in `group_vars`, `host_vars`, play `vars:` or `-e` overrides it. This is what makes a role reusable.
+* **`vars/main.yml`** has high precedence (higher than inventory variables): use it only for values the user should not change.
+* So the full order from [Precedence: who wins](#precedence-who-wins) starts with the role defaults:
+```
+role defaults  <  group_vars/all  <  group_vars/<group>  <  host_vars/<host>  <  play vars:  <  role vars  <  set_fact / register  <  -e
+```
+* To see which variables a Galaxy role expects, read its `README.md` and `defaults/main.yml`, e.g. `~/.ansible/roles/geerlingguy.postgresql/defaults/main.yml`.
+
+### Roles from Ansible Galaxy
+[Ansible Galaxy](https://galaxy.ansible.com) has ready-made roles, named `<namespace>.<role>`.
+The project lists what it needs, roles **and** collections, in [requirements.yml](requirements.yml), with fixed versions:
+```yaml
+roles:
+  - name: geerlingguy.postgresql
+    version: "4.0.0"
+collections:
+  - name: community.postgresql
+    version: ">=4.0.0"
+```
+```bash
+ansible-galaxy install -r requirements.yml    # roles and collections
+ansible-galaxy role list                      # installed roles and where
+```
+* roles are installed in the first path of `roles_path` in `ansible.cfg`, i.e. `./roles`
+* `.gitignore` excludes `roles/*.*/` (Galaxy roles have a dot in their name), so only **our own** roles are committed; everyone else gets the Galaxy roles from `requirements.yml`
+* tools such as Jenkins, AWX or Semaphore read `requirements.yml` and install the dependencies before running a playbook
+
+Example: [playbooks/postgres-from-role.yaml](playbooks/postgres-from-role.yaml) installs PostgreSQL with `geerlingguy.postgresql`:
+* the role is configured only through its variables (`postgresql_databases`, `postgresql_users`, `postgresql_hba_entries`) in play `vars:`
+* the play adds one task of its own after the role and notifies the role handler `restart postgresql`
+* compare it with [playbooks/postgres.yaml](playbooks/postgres.yaml), which does the same with plain tasks
+```bash
+ansible-playbook playbooks/postgres-from-role.yaml --list-tasks
+#   geerlingguy.postgresql : Ensure PostgreSQL is started and enabled on boot.
+```
+In the output, every task of a role starts with the role name.
+
+### Roles and collections
+A **collection** is a bigger package: modules, plugins **and** roles, e.g. `community.postgresql` gives the `postgresql_db` module.
+That is why we write modules with their full name (FQCN): `community.postgresql.postgresql_db`, `ansible.builtin.apt`.
+Roles add tasks; collections add new modules. Both are listed in `requirements.yml`.
+
+Links:
+* [Roles](https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html)
+* [Installing roles and collections with requirements.yml](https://docs.ansible.com/ansible/latest/galaxy/user_guide.html#installing-roles-and-collections-from-the-same-requirements-yml-file)
+* [ansible postgres role](https://galaxy.ansible.com/geerlingguy/postgresql)
 
 ## Kubernetes
-
-install python kubernetes
+Install the python kubernetes client, needed by the `kubernetes.core` modules (`playbooks/k8s-update-spring-deployment.yaml`):
 ```bash
 sudo apt install python3-kubernetes
-
 ```
+
 ## Links
 * [apt module](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html)
 * [file module](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html)

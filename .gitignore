@@ -13,3 +13,6 @@
 # Certificates
 *.crt
 *.key
+# roles από το Ansible Galaxy (ansible-galaxy install -r requirements.yml).
+# Έχουν όνομα namespace.role (π.χ. geerlingguy.postgresql), τα δικά μας roles όχι.
+/roles/*.*/
