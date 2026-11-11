@@ -44,7 +44,7 @@ The same value can be written in many places. We follow a few simple rules, so t
 | Can it be computed from facts? | a variable with a Jinja expression, or directly `ansible_facts` | `postgres_version`, docker `distribution_release` / `architecture` |
 | Is it used only by one playbook and is the same on every host? | `vars:` of the play | `java_package`, `maven_version` in `spring.yaml` |
 | Is it needed by **more than one group**? | `group_vars/all.yaml` | `db.*` (the db server creates the database, the app server connects to it), `app_port` (spring listens on it, the frontend nginx proxies to it) |
-| Is it the same for **all hosts of one group**? | `group_vars/<group>.yaml` | `appdir`, `app_jar` (appservers), `node_version` (frontservers), `db_allowed_cidr` (dbservers) |
+| Is it the same for **all hosts of one group**? | `group_vars/<group>.yaml` | `app_dir`, `app_jar` (appservers), `node_version` (frontservers), `db_allowed_cidr` (dbservers) |
 | Is it different for **one host**? | `host_vars/<host>.yaml`, only that value | `db_host: localhost` for `devops-1` |
 
 Rule of thumb: if you are about to copy the same line into a second `host_vars` file, it probably belongs in `group_vars`.
@@ -88,7 +88,7 @@ Such variables need facts (`gather_facts`, enabled by default). That is also why
 
 ### Naming
 * prefix the variable with the component it belongs to: `frontend_branch`, `frontend_dir`, `db_host`, `postgres_version`
-* avoid generic names in shared files (`branch`, `dir`, `version`): a play `vars: branch: main` would silently hide the `branch: api` of `group_vars`
+* avoid generic names in shared files (`branch`, `dir`, `version`): a play `vars: branch: main` would silently hide the `branch: api` of `group_vars`. That is why the two branches are called `spring_branch` and `frontend_branch`.
 * use the same name for the same thing everywhere (`app_port` in the spring config, in the nginx template and in `wait_for`)
 
 ### Where each variable is defined in this project
@@ -96,7 +96,7 @@ Such variables need facts (`gather_facts`, enabled by default). That is also why
 |---|---|---|
 | `group_vars/all.yaml` | every host | `db.*`, `db_port`, `app_port` (needed by more than one group) |
 | `group_vars/dbservers.yaml` | `dbservers` | `postgres_version` (from the Ubuntu version), `postgres_conf_dir`, `db_allowed_cidr` |
-| `group_vars/appservers.yaml` | `appservers` | spring backend: `spring_repo_url`, `branch`, `appdir`, `app_jar`, `db_host`, `app_env`, `service` |
+| `group_vars/appservers.yaml` | `appservers` | spring backend: `spring_repo_url`, `spring_branch`, `app_dir`, `app_jar`, `db_host`, `app_env`, `spring_service` |
 | `group_vars/frontservers.yaml` | `frontservers` | vue frontend: `frontend_*`, `node_version`, `nvm_version`, `backend_host`, `backend_server_url` |
 | `host_vars/<host>.yaml` | one host | only what differs, e.g. `db_host` |
 | `vars:` in a playbook | that play | values used only by that playbook, e.g. `java_package` in `spring.yaml` |
@@ -121,8 +121,8 @@ Prints, as JSON, the **final** variables of the host after merging `hosts.yaml`,
         ...
     },
     "app_port": 8080,
-    "appdir": "{{ ansible_user_dir }}/spring",
-    "branch": "api",
+    "app_dir": "{{ ansible_user_dir }}/spring",
+    "spring_branch": "api",
     "db": { "name": "appdb", "user": "appuser", ... },   <-- group_vars/all.yaml
     "db_host": "localhost",                              <-- host_vars/devops-1.yaml
     "postgres_version": "{{ postgres_versions[ansible_facts['distribution_version']] }}",
@@ -152,8 +152,11 @@ ansible-inventory --list --yaml
 * the **rendered** value of a variable (Jinja is evaluated, e.g. `{{ app_port }}` becomes `8080`)
 ```bash
 ansible devops-1 -m debug -a "var=app_env"
-ansible appservers -m debug -a "var=service"   # for every host of the group
+ansible appservers -m debug -a "var=app_env"   # for every host of the group
 ```
+Ad-hoc commands do **not** gather facts, so variables that depend on facts show an error, e.g. `spring_service` uses `app_dir`, which uses `ansible_user_dir`:
+`"workingdir": "<< error 1 - 'ansible_user_dir' is undefined >>/spring"`.
+For those, use a playbook (facts are gathered by default), e.g. `ansible-playbook -l appserver-vm playbooks/hostvars_and_facts.yml`.
 * which hosts a playbook will run on (respecting `hosts:` and `-l`), without running it
 ```bash
 ansible-playbook playbooks/spring.yaml --list-hosts

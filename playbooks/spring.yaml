@@ -18,9 +18,9 @@
 #
 # Μεταβλητές (δες τις τελικές τιμές με: ansible-inventory --host devops-1):
 #   group_vars/appservers.yaml:
-#     spring_repo_url, branch, appdir, app_jar, app_port, appuser, appgroup
+#     spring_repo_url, spring_branch, app_dir, app_jar, app_port, app_user, app_group
 #     app_env    -> key/value που γράφονται στο config/application.properties
-#     service.*  -> workingdir / execstart για το systemd unit (files/spring.service.j2)
+#     spring_service.*  -> workingdir / execstart για το systemd unit (files/spring.service.j2)
 #   group_vars/all.yaml:          db.name, db.user, db.password, db_port
 #   host_vars/<host>.yaml:        db_host (αν η βάση δεν είναι στο "dbserver")
 # =============================================================================
@@ -52,14 +52,14 @@
     # ------------------------------------------------------------------
     - name: Show where the application will be installed
       ansible.builtin.debug:
-        msg: "Cloning branch '{{ branch }}' into {{ appdir }}"
+        msg: "Cloning branch '{{ spring_branch }}' into {{ app_dir }}"
 
     # Τρέχει ως ο απλός χρήστης (χωρίς become), ώστε τα αρχεία να ανήκουν σε αυτόν
     - name: Clone the Spring repository
       ansible.builtin.git:
         repo: "{{ spring_repo_url }}"
-        dest: "{{ appdir }}"
-        version: "{{ branch }}"
+        dest: "{{ app_dir }}"
+        version: "{{ spring_branch }}"
         force: true              # αγνόησε τοπικές αλλαγές σε αρχεία του repo
       register: spring_repo      # spring_repo.changed: ήρθε νέος κώδικας;
 
@@ -70,7 +70,7 @@
     # dict2items: {k1: v1, k2: v2} -> [{key: k1, value: v1}, {key: k2, value: v2}]
     - name: Populate config/application.properties
       ansible.builtin.lineinfile:
-        path: "{{ appdir }}/config/application.properties"
+        path: "{{ app_dir }}/config/application.properties"
         regexp: "^{{ item.key | regex_escape }}="
         line: "{{ item.key }}={{ item.value }}"
         create: true             # δημιουργεί το αρχείο (και τον φάκελο) αν δεν υπάρχουν
@@ -85,7 +85,7 @@
     # ------------------------------------------------------------------
     - name: Check if the jar has already been built
       ansible.builtin.stat:
-        path: "{{ appdir }}/target/{{ app_jar }}"
+        path: "{{ app_dir }}/target/{{ app_jar }}"
       register: spring_jar
 
     # block / rescue / always: σαν try / catch / finally
@@ -100,7 +100,7 @@
         - name: Build with the maven wrapper
           ansible.builtin.command:
             cmd: ./mvnw package -Dmaven.test.skip
-            chdir: "{{ appdir }}"
+            chdir: "{{ app_dir }}"
           notify: restart spring
 
       # Συχνό σφάλμα: το checksum στο maven-wrapper.properties δεν ταιριάζει
@@ -118,14 +118,14 @@
 
         - name: Fix distributionSha512Sum in maven-wrapper.properties
           ansible.builtin.lineinfile:
-            path: "{{ appdir }}/.mvn/wrapper/maven-wrapper.properties"
+            path: "{{ app_dir }}/.mvn/wrapper/maven-wrapper.properties"
             regexp: "^distributionSha512Sum="
             line: "distributionSha512Sum={{ maven_sha512.content | trim | split | first }}"
 
         - name: Build again with the maven wrapper
           ansible.builtin.command:
             cmd: ./mvnw package -Dmaven.test.skip
-            chdir: "{{ appdir }}"
+            chdir: "{{ app_dir }}"
           notify: restart spring
 
     # ------------------------------------------------------------------

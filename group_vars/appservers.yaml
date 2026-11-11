@@ -9,17 +9,17 @@
 
 # ---------------------------------------------------------------- spring backend
 spring_repo_url: "https://github.com/tsadimasteaching/ds-lab-2024.git"
-branch: api
-appdir: "{{ ansible_user_dir }}/spring"
+spring_branch: api
+app_dir: "{{ ansible_user_dir }}/spring"
 app_jar: ds-lab-2024-0.0.1-SNAPSHOT.jar     # <artifactId>-<version>.jar από το pom.xml
-appuser: "{{ ansible_user_id }}"
-appgroup: "{{ ansible_user_gid }}"
+app_user: "{{ ansible_user_id }}"
+app_group: "{{ ansible_user_gid }}"
 # app_port: στο group_vars/all.yaml (το χρειάζεται και το nginx των frontservers)
 
 # host της PostgreSQL, όπως τον βλέπει ο appserver
 db_host: dbserver
 
-# γράφονται στο <appdir>/config/application.properties (spring.yaml)
+# γράφονται στο <app_dir>/config/application.properties (spring.yaml)
 app_env:
   server.port: "{{ app_port }}"
   spring.datasource.username: "{{ db.user }}"
@@ -27,6 +27,6 @@ app_env:
   spring.datasource.url: "jdbc:postgresql://{{ db_host }}:{{ db_port }}/{{ db.name }}"
 
 # systemd unit (files/spring.service.j2)
-service:
-  workingdir: "{{ appdir }}"
-  execstart: "/usr/bin/java -jar {{ appdir }}/target/{{ app_jar }}"
+spring_service:
+  workingdir: "{{ app_dir }}"
+  execstart: "/usr/bin/java -jar {{ app_dir }}/target/{{ app_jar }}"

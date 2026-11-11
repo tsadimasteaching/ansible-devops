@@ -3,10 +3,10 @@ Description=spring boot daemon
 After=network.target
 
 [Service]
-User={{appuser}}
-Group={{appgroup}}
-WorkingDirectory={{service.workingdir}}
-ExecStart={{service.execstart}}
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ spring_service.workingdir }}
+ExecStart={{ spring_service.execstart }}
 
 [Install]
 WantedBy=multi-user.target

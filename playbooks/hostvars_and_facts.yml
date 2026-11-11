@@ -7,7 +7,7 @@
   tasks:
     # hostvars = μεταβλητές ΟΛΩΝ των hosts του inventory, π.χ. hostvars['dbserver-vm'].db
     # Τυπώνουμε μόνο τον τρέχοντα host (inventory_hostname): για τους άλλους δεν έχουν
-    # μαζευτεί facts, οπότε μεταβλητές όπως το appdir ("{{ ansible_user_dir }}/spring")
+    # μαζευτεί facts, οπότε μεταβλητές όπως το app_dir ("{{ ansible_user_dir }}/spring")
     # θα έβγαιναν undefined.
     - name: Print the variables of this host
       ansible.builtin.debug:

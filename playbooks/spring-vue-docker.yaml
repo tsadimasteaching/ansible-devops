@@ -7,7 +7,7 @@
 # ΔΕΝ τρέχουν ήδη το spring.yaml / postgres.yaml (π.χ. ένα καινούργιο VM).
 #
 # Αν δεν υπάρχει docker, εγκαθίσταται πρώτα (tasks/install-docker.yaml).
-# Μεταβλητές: spring_repo_url, branch, appdir, app_env (group_vars/appservers.yaml)
+# Μεταβλητές: spring_repo_url, spring_branch, app_dir, app_env (group_vars/appservers.yaml)
 - name: Deploy spring and vue with docker compose
   hosts: appservers
 
@@ -27,13 +27,13 @@
     - name: Clone the Spring repository
       ansible.builtin.git:
         repo: "{{ spring_repo_url }}"
-        dest: "{{ appdir }}"
-        version: "{{ branch }}"
+        dest: "{{ app_dir }}"
+        version: "{{ spring_branch }}"
         force: true
 
     - name: Populate application.properties
       ansible.builtin.lineinfile:
-        path: "{{ appdir }}/src/main/resources/application.properties"
+        path: "{{ app_dir }}/src/main/resources/application.properties"
         regexp: "^{{ item.key | regex_escape }}="
         line: "{{ item.key }}={{ item.value }}"
       loop: "{{ app_env | dict2items }}"
@@ -42,12 +42,12 @@
 
     - name: Tear down existing services
       community.docker.docker_compose_v2:
-        project_src: "{{ appdir }}"
+        project_src: "{{ app_dir }}"
         state: absent
 
     - name: Create and start services
       community.docker.docker_compose_v2:
-        project_src: "{{ appdir }}"
+        project_src: "{{ app_dir }}"
         build: always
         state: present
       register: output
