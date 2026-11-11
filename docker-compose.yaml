@@ -1,0 +1,62 @@
+# Semaphore UI: web περιβάλλον για να τρέχουμε τα playbooks αυτού του project.
+# Οδηγίες: semaphore.md
+#
+#   docker compose up -d        ->  http://localhost:3000  (admin / changeme)
+#   docker compose down         (τα δεδομένα μένουν στο volume semaphore-db)
+#   docker compose down -v      (σβήνει και τα δεδομένα)
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: semaphore
+      POSTGRES_PASSWORD: semaphore_pass
+      POSTGRES_DB: semaphore
+    volumes:
+      - semaphore-db:/var/lib/postgresql/data
+    # Ο semaphore τρέχει στο δίκτυο του host (δες παρακάτω), οπότε και η βάση τρέχει εκεί.
+    # Ακούει μόνο στο 127.0.0.1 (δεν είναι ανοιχτή στο δίκτυο) και στην 5433,
+    # για να μη συγκρούεται με τυχόν postgres του host.
+    network_mode: host
+    command: ["postgres", "-p", "5433", "-c", "listen_addresses=127.0.0.1"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5433 -U semaphore -d semaphore"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  semaphore:
+    image: semaphoreui/semaphore:v2.19.17
+    # Δίκτυο του host: ο semaphore "βλέπει" τα Vagrant VMs (192.168.56.x) όπως ο host.
+    # Από το δίκτυο του docker δεν φτάνουμε σε αυτά, γιατί το firewall του libvirt κόβει την κίνηση.
+    network_mode: host
+    environment:
+      SEMAPHORE_PORT: ":3000"
+      SEMAPHORE_DB_DIALECT: postgres
+      SEMAPHORE_DB_HOST: 127.0.0.1
+      SEMAPHORE_DB_PORT: 5433
+      SEMAPHORE_DB_USER: semaphore
+      SEMAPHORE_DB_PASS: semaphore_pass
+      SEMAPHORE_DB: semaphore
+      SEMAPHORE_ADMIN: admin
+      SEMAPHORE_ADMIN_NAME: admin
+      SEMAPHORE_ADMIN_EMAIL: admin@localhost
+      SEMAPHORE_ADMIN_PASSWORD: changeme
+      # Κλειδί με το οποίο κρυπτογραφούνται τα secrets (ssh keys, κωδικοί) στη βάση.
+      # Για δική σου χρήση φτιάξε νέο: head -c32 /dev/urandom | base64
+      SEMAPHORE_ACCESS_KEY_ENCRYPTION: "JRpCPtaFYwYYWMYaq3LrOf2JktRRsw4XpqRN/TC8HN8="
+    # Τα Vagrant VMs με τις σταθερές IP του private network (vagrant/Vagrantfile).
+    # Χρειάζεται γιατί το hosts.yaml έχει ansible_host: appserver, dbserver, ...
+    extra_hosts:
+      - "appserver:192.168.56.101"
+      - "dbserver:192.168.56.102"
+      - "frontserver:192.168.56.103"
+    volumes:
+      # Αυτό το project, read-only: στο Semaphore δηλώνεται ως repository με path /opt/ansible-devops
+      - .:/opt/ansible-devops:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  semaphore-db:

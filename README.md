@@ -261,6 +261,13 @@ Each playbook targets its own group (`hosts:`), so `-l` only limits the run to t
 Links:
 * [Vagrant Quick start](https://learn.hashicorp.com/collections/vagrant/getting-started)
 
+## Semaphore UI
+Run the playbooks of this project from a web UI ([Semaphore](https://semaphoreui.com)), with history and stored ssh keys:
+```bash
+docker compose up -d       # http://localhost:3000  (admin / changeme)
+```
+Setup steps (ssh key, repository, inventory, templates): [semaphore.md](semaphore.md)
+
 ## Vault
 * create a file that holds the **secret**
 ```bash
