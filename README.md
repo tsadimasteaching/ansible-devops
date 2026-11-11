@@ -402,29 +402,77 @@ chmod 600 ~/.ansible/vault_pass.txt
 If the password is lost, the encrypted data cannot be recovered.
 
 ### Pattern: secrets in `group_vars` with the `vault_` prefix
-An encrypted file cannot be searched, so we do not encrypt the normal vars file. Instead `group_vars/<group>` becomes a **directory** with two files:
-```
-group_vars/all/
-├── vars.yaml     # plain, readable: all variables, secrets point to vault_*
-└── vault.yaml    # encrypted with ansible-vault: only the vault_* values
-```
+This is the usual way to keep secrets of the **inventory** (e.g. the database password) in git.
+
+#### The problem
+`group_vars/all.yaml` has the database password in plain text, next to normal values:
 ```yaml
-# group_vars/all/vars.yaml
 db:
   name: appdb
   user: appuser
-  password: "{{ vault_db_password }}"
+  password: apppassword      # <-- the only secret in the file
+db_port: 5432
+app_port: 8080
+```
+We want to encrypt only the password. Two obvious solutions both have a problem:
+* **encrypt the whole file** (`ansible-vault encrypt group_vars/all.yaml`): now nobody can read `db_port` or `app_port` without the vault password, `grep app_port` finds nothing, and `git diff` shows only encrypted text for any change
+* **encrypt only the value** with `encrypt_string`: it works, but a file full of `!vault |` blocks is hard to read, and every secret is changed with a separate command
+
+#### The solution: two files, connected by a variable
+Split the variables of the group in two files: one **plain** with all the variables, and one **encrypted** with only the secret values.
+The plain file does not contain the secret; it **points** to it with a variable whose name starts with `vault_`:
+```
+group_vars/all/           # a directory instead of the file all.yaml
+├── vars.yaml             # plain:     db.password: "{{ vault_db_password }}"
+└── vault.yaml            # encrypted: vault_db_password: apppassword
 ```
 ```yaml
-# group_vars/all/vault.yaml   (ansible-vault create group_vars/all/vault.yaml)
+# group_vars/all/vars.yaml: plain, everyone can read it
+db:
+  name: appdb
+  user: appuser
+  password: "{{ vault_db_password }}"    # the value is in vault.yaml
+db_port: 5432
+app_port: 8080
+```
+```yaml
+# group_vars/all/vault.yaml: encrypted, only the secrets, all named vault_*
 vault_db_password: apppassword
 ```
-* `grep -r db_password` still finds where the password is used and where it comes from
-* the playbooks do not change: they still use `db.password`
-* Ansible reads every file in `group_vars/all/`, so the split is invisible to the playbooks
-* every command that loads this inventory now needs the vault password (`--ask-vault-pass`), even `ansible -m ping` and `ansible-inventory --host`
+How it works:
+* **Ansible reads every file in `group_vars/all/`** (in alphabetical order) for the hosts of `all`, exactly as if they were one file. So `vault_db_password` and `db` are both available.
+* **The playbooks do not change**: they still use `db.password`. When it is used, `"{{ vault_db_password }}"` is evaluated and gets the value from the encrypted file.
+* **The `vault_` prefix is a convention, not an Ansible feature.** It tells the reader "this value is in the encrypted file".
 
-This project keeps `db.password` in plain text in `group_vars/all.yaml`, so that the playbooks run without a vault password in the lab.
+#### Step by step, for this project
+```bash
+# 1. the file becomes a directory
+mkdir group_vars/all
+git mv group_vars/all.yaml group_vars/all/vars.yaml
+
+# 2. in vars.yaml replace the secret value with a reference
+#      password: apppassword   ->   password: "{{ vault_db_password }}"
+
+# 3. create the encrypted file with the secret (opens the editor)
+ansible-vault create group_vars/all/vault.yaml
+#      vault_db_password: apppassword
+
+# 4. check: the password is now needed to read the inventory at all
+ansible-inventory --host devops-1                      # ERROR: no vault secrets found
+ansible-inventory --host devops-1 --ask-vault-pass
+ansible devops-1 -m debug -a 'msg="{{ db.password | length }} chars"' --ask-vault-pass
+```
+The same works for any group (`group_vars/dbservers/vars.yaml` + `vault.yaml`) or host (`host_vars/devops-1/vars.yaml` + `vault.yaml`).
+
+#### What you get
+* everybody can still read and `grep` every variable name: `grep -rn db_password group_vars` finds
+  `group_vars/all/vars.yaml:  password: "{{ vault_db_password }}"`, and the `vault_` name tells where the value is
+* `git diff` of `vars.yaml` stays readable; only changes in `vault.yaml` are encrypted
+* the secrets are in one place: `ansible-vault edit group_vars/all/vault.yaml`, `ansible-vault rekey group_vars/all/vault.yaml`
+* `ansible-inventory --host` shows `"password": "{{ vault_db_password }}"` and `"vault_db_password": "$REDACTED$"`, so the secret does not leak in the output
+
+The cost: **every** command that loads the inventory needs the vault password, even `ansible -m ping`, because Ansible reads all of `group_vars/all/` before it runs anything.
+That is why this project keeps `db.password` in plain text in `group_vars/all.yaml`: the playbooks run in the lab without a vault password.
 
 ### Keep secrets out of the output
 * `no_log: true` on a task hides its arguments and result, also with `-v` (see the second task of `vault-example.yaml`)
