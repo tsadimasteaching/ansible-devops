@@ -1,14 +1,32 @@
-appdir: "{{ ansible_user_dir }}/spring"
-branch: "api"
-appuser: "{{ansible_user_id}}"
-appgroup: "{{ansible_user_gid}}"
-app_port: 8080
-backend_server_url: "http://192.168.56.101:8080"
-app:
-  VITE_BACKEND:  http://192.168.56.103
-  env:
-    server.port: "{{app_port}}"
-    spring.datasource.username: appuser
-    spring.datasource.password: apppassword
-    spring.datasource.url: jdbc:postgresql://dbserver:5432/appdb
+---
+# Μεταβλητές για τους hosts του group "appservers".
+# Ό,τι διαφέρει ανά host (π.χ. db_host) ορίζεται στο host_vars/<host>.yaml.
+#
+# ΠΡΟΣΟΧΗ: αν ένα dictionary (π.χ. app_env) οριστεί ξανά στο host_vars,
+# αντικαθιστά ΟΛΟΚΛΗΡΟ το dictionary από εδώ (δεν γίνεται merge).
+# Γι' αυτό τα dictionaries χτίζονται από απλές μεταβλητές (db_host, app_port, ...)
+# και στο host_vars αλλάζουμε μόνο αυτές.
 
+# ---------------------------------------------------------------- spring backend
+spring_repo_url: "https://github.com/tsadimasteaching/ds-lab-2024.git"
+branch: api
+appdir: "{{ ansible_user_dir }}/spring"
+app_jar: ds-lab-2024-0.0.1-SNAPSHOT.jar     # <artifactId>-<version>.jar από το pom.xml
+appuser: "{{ ansible_user_id }}"
+appgroup: "{{ ansible_user_gid }}"
+# app_port: στο group_vars/all.yaml (το χρειάζεται και το nginx των frontservers)
+
+# host της PostgreSQL, όπως τον βλέπει ο appserver
+db_host: dbserver
+
+# γράφονται στο <appdir>/config/application.properties (spring.yaml)
+app_env:
+  server.port: "{{ app_port }}"
+  spring.datasource.username: "{{ db.user }}"
+  spring.datasource.password: "{{ db.password }}"
+  spring.datasource.url: "jdbc:postgresql://{{ db_host }}:{{ db_port }}/{{ db.name }}"
+
+# systemd unit (files/spring.service.j2)
+service:
+  workingdir: "{{ appdir }}"
+  execstart: "/usr/bin/java -jar {{ appdir }}/target/{{ app_jar }}"

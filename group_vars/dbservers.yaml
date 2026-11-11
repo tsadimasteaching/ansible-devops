@@ -1,4 +1,17 @@
-db:
-  name: "appdb"
-  user: "appuser"
-  password: "apppassword"
+---
+# Μεταβλητές για τους hosts του group "dbservers".
+# Τα στοιχεία της βάσης (db.name, db.user, db.password) είναι στο group_vars/all.yaml.
+
+# Ποια έκδοση PostgreSQL έρχεται με κάθε έκδοση Ubuntu.
+postgres_versions:
+  "22.04": 14
+  "24.04": 16
+
+# Υπολογίζεται τη στιγμή που χρησιμοποιείται, από τα facts του host
+# (χρειάζεται gather_facts, που είναι ενεργό by default).
+postgres_version: "{{ postgres_versions[ansible_facts['distribution_version']] }}"
+postgres_conf_dir: "/etc/postgresql/{{ postgres_version }}/main"
+
+# Από ποιες διευθύνσεις επιτρέπεται σύνδεση στη βάση (pg_hba.conf).
+# 0.0.0.0/0 = από παντού. Σε παραγωγή: μόνο το δίκτυο των appservers, π.χ. 192.168.56.0/24
+db_allowed_cidr: 0.0.0.0/0

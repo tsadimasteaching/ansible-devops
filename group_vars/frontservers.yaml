@@ -1,0 +1,21 @@
+---
+# Μεταβλητές για τους hosts του group "frontservers" (vue frontend + nginx).
+# Χρησιμοποιούνται από το playbooks/vuejs.yaml.
+
+frontend_repo_url: "https://github.com/gkoulis/ds-lab-2023-frontend.git"
+frontend_branch: main
+frontend_dir: "{{ ansible_user_dir }}/frontend"
+frontend_site_dir: /var/www/vue              # εδώ αντιγράφεται το build (dist/)
+nvm_version: "0.39.7"
+node_version: "20.12.1"
+
+# ο spring backend, όπως τον βλέπει το nginx του frontend server
+# (app_port: group_vars/all.yaml)
+backend_host: appserver
+backend_server_url: "http://{{ backend_host }}:{{ app_port }}"
+
+# γράφονται στο .env.local του frontend πριν το build.
+# Το VITE_BACKEND το χρησιμοποιεί ο browser, άρα πρέπει να είναι η διεύθυνση του
+# frontend server (το nginx του προωθεί τα /api, /student, /course στον backend).
+frontend_env:
+  VITE_BACKEND: "http://{{ ansible_host }}"

@@ -1,138 +1,217 @@
 ---
-- hosts: all
+# =============================================================================
+# Deploy μιας Spring Boot εφαρμογής πίσω από nginx (reverse proxy)
+#
+#   browser ──► nginx :80 ──► spring boot :{{ app_port }} ──► postgres
+#
+# Βήματα:
+#   1. εγκατάσταση Java (pre_tasks)
+#   2. git clone του κώδικα
+#   3. ρυθμίσεις στο config/application.properties
+#   4. build με το maven wrapper, μόνο αν άλλαξε ο κώδικας (με block/rescue για χειρισμό σφάλματος)
+#   5. systemd service για την εφαρμογή
+#   6. nginx ως reverse proxy
+#   7. έλεγχος ότι όλα τρέχουν
+#
+# Εκτέλεση (π.χ. μόνο στο devops-1):
+#   ansible-playbook playbooks/spring.yaml -l devops-1
+#
+# Μεταβλητές (δες τις τελικές τιμές με: ansible-inventory --host devops-1):
+#   group_vars/appservers.yaml:
+#     spring_repo_url, branch, appdir, app_jar, app_port, appuser, appgroup
+#     app_env    -> key/value που γράφονται στο config/application.properties
+#     service.*  -> workingdir / execstart για το systemd unit (files/spring.service.j2)
+#   group_vars/all.yaml:          db.name, db.user, db.password, db_port
+#   host_vars/<host>.yaml:        db_host (αν η βάση δεν είναι στο "dbserver")
+# =============================================================================
 
+- name: Deploy Spring Boot application
+  hosts: appservers
+
+  # μεταβλητές που αφορούν μόνο αυτό το playbook
+  vars:
+    java_package: openjdk-21-jdk
+    maven_version: "3.9.9"
+
+  # Τα pre_tasks εκτελούνται ΠΡΙΝ από τα tasks (και τα roles).
+  # Εδώ βάζουμε ό,τι πρέπει να υπάρχει πριν ξεκινήσουμε (προαπαιτούμενα).
   pre_tasks:
-    - name: Install Java
-      apt:
-          name: openjdk-21-jdk
-          state: present
-          update_cache: yes
-      become: yes
+    - name: Install Java and git
+      ansible.builtin.apt:
+        name:
+          - "{{ java_package }}"
+          - git
+        state: present
+        update_cache: true
+        cache_valid_time: 3600   # μην κάνεις apt update αν έγινε την τελευταία ώρα
+      become: true
 
   tasks:
-      - name: "debug appdir"
-        ansible.builtin.debug:
-          msg: "appdir {{ansible_user_dir}}"
+    # ------------------------------------------------------------------
+    # 1. Κώδικας
+    # ------------------------------------------------------------------
+    - name: Show where the application will be installed
+      ansible.builtin.debug:
+        msg: "Cloning branch '{{ branch }}' into {{ appdir }}"
 
-      - name: "Clone the Spring repository"
-        git:
-            repo: "https://github.com/tsadimasteaching/ds-lab-2024.git"
-            dest: "{{ appdir }}"
-            version: "{{ branch }}"
-            force: yes
+    # Τρέχει ως ο απλός χρήστης (χωρίς become), ώστε τα αρχεία να ανήκουν σε αυτόν
+    - name: Clone the Spring repository
+      ansible.builtin.git:
+        repo: "{{ spring_repo_url }}"
+        dest: "{{ appdir }}"
+        version: "{{ branch }}"
+        force: true              # αγνόησε τοπικές αλλαγές σε αρχεία του repo
+      register: spring_repo      # spring_repo.changed: ήρθε νέος κώδικας;
 
-      - name: "Populate application.properties"
-        lineinfile:
-          dest: "{{ appdir }}/src/main/resources/application.properties"
-          state: present
-          regexp: "^{{item.key}}="
-          line: "{{item.key}}={{item.value}}"
-        with_items:
-          - "{{app.env | dict2items}}"
+    # Το Spring Boot διαβάζει πρώτα το config/application.properties του working directory
+    # και μετά το src/main/resources/application.properties (που είναι μέσα στο jar).
+    # Γράφουμε στο config/: δεν είναι στο git, οπότε το git module δεν το επαναφέρει,
+    # και μια αλλαγή ρύθμισης θέλει μόνο restart, όχι νέο build.
+    # dict2items: {k1: v1, k2: v2} -> [{key: k1, value: v1}, {key: k2, value: v2}]
+    - name: Populate config/application.properties
+      ansible.builtin.lineinfile:
+        path: "{{ appdir }}/config/application.properties"
+        regexp: "^{{ item.key | regex_escape }}="
+        line: "{{ item.key }}={{ item.value }}"
+        create: true             # δημιουργεί το αρχείο (και τον φάκελο) αν δεν υπάρχουν
+        mode: "0600"             # περιέχει κωδικό
+      loop: "{{ app_env | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"   # στην έξοδο φαίνεται μόνο το key, όχι π.χ. ο κωδικός
+      notify: restart spring
 
-      
-      - name: "Build spring project"
-        block:
+    # ------------------------------------------------------------------
+    # 2. Build
+    # ------------------------------------------------------------------
+    - name: Check if the jar has already been built
+      ansible.builtin.stat:
+        path: "{{ appdir }}/target/{{ app_jar }}"
+      register: spring_jar
 
-        - name: "Build the Spring application"
-          command: "./mvnw package -Dmaven.test.skip "
-          args:
-              chdir: "{{ appdir }}"
+    # block / rescue / always: σαν try / catch / finally
+    #   block  -> αυτό που θέλουμε να κάνουμε
+    #   rescue -> εκτελείται μόνο αν αποτύχει κάποιο task του block
+    #   always -> εκτελείται πάντα (εδώ δεν χρειάζεται)
+    # Το when σε ένα block ισχύει για όλα τα tasks του:
+    # build μόνο αν ήρθε νέος κώδικας ή αν δεν υπάρχει ακόμα jar.
+    - name: Build the Spring application
+      when: spring_repo.changed or not spring_jar.stat.exists
+      block:
+        - name: Build with the maven wrapper
+          ansible.builtin.command:
+            cmd: ./mvnw package -Dmaven.test.skip
+            chdir: "{{ appdir }}"
+          notify: restart spring
 
-  #      - name: "Run the Spring application"
-  #        command: "java -jar target/springbootdemo-0.0.1-SNAPSHOT.jar"
-  #        args:
-  #            chdir: "{{ appdir }}"
+      # Συχνό σφάλμα: το checksum στο maven-wrapper.properties δεν ταιριάζει
+      # με το maven που κατεβαίνει. Το διορθώνουμε και ξαναδοκιμάζουμε.
+      rescue:
+        - name: Show why the build failed
+          ansible.builtin.debug:
+            msg: "Task '{{ ansible_failed_task.name }}' failed, trying to fix the maven wrapper checksum"
 
-        rescue:
+        - name: Fetch the SHA-512 checksum for Maven {{ maven_version }}
+          ansible.builtin.uri:
+            url: "https://downloads.apache.org/maven/maven-3/{{ maven_version }}/binaries/apache-maven-{{ maven_version }}-bin.zip.sha512"
+            return_content: true
+          register: maven_sha512
 
-        - name: Fetch the SHA-512 checksum for Maven 3.9.9
-          get_url:
-            url: https://downloads.apache.org/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.zip.sha512
-            dest: /tmp/maven_sha512.txt
-            validate_certs: yes
-            force: yes
-
-        - name: Read the SHA-512 checksum from the file
-          command: cat /tmp/maven_sha512.txt
-          register: sha512_checksum
-
-        - name: Replace the distributionSha512Sum line in maven-wrapper.properties
-          replace:
+        - name: Fix distributionSha512Sum in maven-wrapper.properties
+          ansible.builtin.lineinfile:
             path: "{{ appdir }}/.mvn/wrapper/maven-wrapper.properties"
-            regexp: '^distributionSha'
-            replace: "distributionSha512Sum={{ sha512_checksum.stdout }}"
-        
-        - name: Clean up the temporary file
-          file:
-            path: /tmp/maven_sha512.txt
-            state: absent
-          when: sha512_checksum is defined
-        
-        always:
-          - name: "Build the Spring application"
-            command: "./mvnw package -Dmaven.test.skip "
-            args:
-                chdir: "{{ appdir }}"
+            regexp: "^distributionSha512Sum="
+            line: "distributionSha512Sum={{ maven_sha512.content | trim | split | first }}"
 
+        - name: Build again with the maven wrapper
+          ansible.builtin.command:
+            cmd: ./mvnw package -Dmaven.test.skip
+            chdir: "{{ appdir }}"
+          notify: restart spring
 
-      - name: copy spring service file
-        template:
-          src: ../files/spring.service.j2
-          dest: "/etc/systemd/system/spring.service"
-        become: yes
-        become_user: root
-        notify: restart spring
+    # ------------------------------------------------------------------
+    # 3. systemd service
+    # ------------------------------------------------------------------
+    - name: Install the spring systemd service
+      ansible.builtin.template:
+        src: ../files/spring.service.j2
+        dest: /etc/systemd/system/spring.service
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      notify: restart spring
 
-      - name: reload spring service
-        service:
-          name: spring
-          state: restarted
-        become: yes
+    - name: Ensure spring service is enabled and started
+      ansible.builtin.systemd_service:
+        name: spring
+        state: started
+        enabled: true
+        daemon_reload: true      # να "δει" το systemd το νέο/αλλαγμένο unit file
+      become: true
 
-      - name: ensure spring service started
-        service:
-          name: spring
-          state: started
-          enabled: yes
-        become: yes
+    # ------------------------------------------------------------------
+    # 4. nginx reverse proxy
+    # ------------------------------------------------------------------
+    - name: Install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      become: true
 
-      - name: "APT - install nginx"
-        apt:
-          name: nginx
-          update_cache: yes
-        become: yes
+    - name: Copy nginx site configuration
+      ansible.builtin.template:
+        src: ../files/nginx.http.j2
+        dest: /etc/nginx/sites-available/spring
+        mode: "0644"
+      become: true
+      notify: reload nginx
 
-      - name: copy nginx conf file
-        template:
-          src: ../files/nginx.http.j2
-          dest: "/etc/nginx/sites-available/spring"
-        become: yes
+    - name: Enable spring site in nginx
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/spring
+        dest: /etc/nginx/sites-enabled/spring
+        state: link
+      become: true
+      notify: reload nginx
 
-      - name: enable spring site in nginx
-        file:
-          src: "/etc/nginx/sites-available/spring"
-          dest: "/etc/nginx/sites-enabled/spring"
-          state: link
-        become: yes
-        notify: restart nginx
+    - name: Disable default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      become: true
+      notify: reload nginx
 
-      - name: de-activate default nginx site
-        file:
-          path: /etc/nginx/sites-enabled/default
-          state: absent
-        become: yes
-        notify: restart nginx
+    # ------------------------------------------------------------------
+    # 5. Έλεγχος
+    # ------------------------------------------------------------------
+    # Οι handlers κανονικά τρέχουν στο τέλος του play.
+    # Με flush_handlers τους τρέχουμε τώρα, ώστε να ελέγξουμε την τελική κατάσταση.
+    - name: Run pending handlers now
+      ansible.builtin.meta: flush_handlers
 
+    - name: Wait for spring to listen on port {{ app_port }}
+      ansible.builtin.wait_for:
+        port: "{{ app_port }}"
+        timeout: 120
+
+    - name: Wait for nginx to listen on port 80
+      ansible.builtin.wait_for:
+        port: 80
+        timeout: 30
+
+  # Οι handlers εκτελούνται μόνο αν κάποιο task τους κάνει notify ΚΑΙ είχε "changed",
+  # και μόνο μία φορά, όσες φορές κι αν γίνει notify.
   handlers:
-  - name: restart spring
-    service:
-      name: spring
-      state: restarted
-    become: yes
+    - name: restart spring
+      ansible.builtin.systemd_service:
+        name: spring
+        state: restarted
+        daemon_reload: true
+      become: true
 
-  - name: restart nginx
-    service:
-      name: nginx
-      state: restarted
-    become: yes
+    # πρώτα ελέγχουμε το config (nginx -t) και μετά κάνουμε reload
+    - name: reload nginx
+      ansible.builtin.shell: nginx -t && systemctl reload nginx
+      become: true

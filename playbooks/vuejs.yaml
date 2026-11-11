@@ -1,132 +1,124 @@
 ---
-- hosts: appservers
+# Build ενός Vue.js frontend και σερβίρισμα από nginx.
+# Το nginx προωθεί τα /api, /student, /course στον spring backend (files/nginx.vue.j2).
+#
+#   ansible-playbook playbooks/vuejs.yaml                 # όλοι οι frontservers
+#   ansible-playbook -l frontend-vm playbooks/vuejs.yaml  # μόνο ένας
+#
+# Μεταβλητές (group_vars/frontservers.yaml, app_port: group_vars/all.yaml):
+#   frontend_repo_url, frontend_branch, frontend_dir, frontend_site_dir,
+#   nvm_version, node_version, frontend_env (-> .env.local), backend_server_url (-> nginx)
+- name: Build and deploy the Vue.js frontend
+  hosts: frontservers
 
   vars:
-      frontendappdir: "{{ ansible_user_dir }}/frontend"
-      branch: "main"
-      site_location: /var/www/vue
+    # εδώ εγκαθιστά το node το nvm
+    node_bin_dir: "{{ ansible_user_dir }}/.nvm/versions/node/v{{ node_version }}/bin"
 
   pre_tasks:
+    - name: Install nginx and git
+      ansible.builtin.apt:
+        name:
+          - nginx
+          - git
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      become: true
 
-    - name: Find my public ip
-      uri:
-        url: http://ifconfig.me/ip
-        return_content: yes
-      register: ip_response
-
-    - name: See public ip
-      debug:
-        var: ip_response.content
-
-    - name: Install Nginx
-      package:
-        name: nginx
-        state: latest
-      become: yes
-
-    - name: Install nvm
-      shell: |
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    # creates: αν υπάρχει ήδη το αρχείο, το task δεν ξανατρέχει (idempotent shell)
+    - name: Install nvm {{ nvm_version }}
+      ansible.builtin.shell: >-
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v{{ nvm_version }}/install.sh | bash
       args:
         executable: /bin/bash
-        chdir: "$HOME"
-        creates: "$HOME/.nvm/nvm.sh"
+        creates: "{{ ansible_user_dir }}/.nvm/nvm.sh"
 
-    - name: Setup .profile
-      ansible.builtin.lineinfile:
-        path: ~/.profile
-        line: source ~/.nvm/nvm.sh # This will make sure Node is on the user's PATH
-        create: yes
-
-    - name: "debug"
-      ansible.builtin.debug:
-        msg: "PATH : {{ ansible_env.PATH }}"
-      
-    - name: Install node
-      shell: |
-        source $HOME/.nvm/nvm.sh && nvm install 20.12.1
+    - name: Install node {{ node_version }}
+      ansible.builtin.shell: source ~/.nvm/nvm.sh && nvm install {{ node_version }}
       args:
         executable: /bin/bash
-        chdir: "$HOME"
-        creates: "$HOME/.nvm/versions/node/v20.12.1"
-  
-    - name: Install Git
-      package:
-        name: git
-        state: latest
-      become: yes
-
-
+        creates: "{{ node_bin_dir }}"
 
   tasks:
-    - name: "Clone the Vue repository"
-      git:
-          repo: "https://github.com/gkoulis/ds-lab-2023-frontend.git"
-          dest: "{{ frontendappdir }}"
-          version: "{{ branch }}"
-          force: yes
-
-    - name: copy env file
-      shell : "cp {{frontendappdir}}/.env.example {{frontendappdir}}/.env"
-
-    - name: populate  ~/.env
-      lineinfile:
-        dest: "{{frontendappdir}}/.env"
-        state: present
-        regexp: "^{{item.key}}="
-        line: "{{item.key}}='{{item.value}}'"
-      with_items:
-        - "{{app | dict2items}}"
-
-
-    - name: "Install dependencies"
-      shell: |
-        export PATH=$PATH:~/.nvm/versions/node/v20.12.1/bin; npm install
-      args:
-        chdir: "{{ frontendappdir }}"
-
-    - name: "Build the Vue.js application"
-      shell: |
-        export PATH=$PATH:~/.nvm/versions/node/v20.12.1/bin; npm run build
-      args:
-        chdir: "{{ frontendappdir }}"
-
-    - name: Copy dist in nginx location 
-      copy:
-        src: "{{ frontendappdir }}/dist/"
-        dest: "{{ site_location }}"
-        remote_src: True
-        mode: 7777
+    - name: Clone the Vue repository
+      ansible.builtin.git:
+        repo: "{{ frontend_repo_url }}"
+        dest: "{{ frontend_dir }}"
+        version: "{{ frontend_branch }}"
         force: true
-      notify: restart nginx
-      become: yes
+      register: frontend_repo
 
-    - name: copy nginx conf file
-      template:
+    # Το .env είναι μέσα στο git: αν το αλλάζαμε, το git module (force: true) θα το
+    # επανέφερε σε κάθε εκτέλεση. Το Vite διαβάζει και το .env.local, με μεγαλύτερη
+    # προτεραιότητα, και αυτό είναι στο .gitignore. Γράφουμε λοιπόν εκεί.
+    - name: Populate .env.local
+      ansible.builtin.lineinfile:
+        path: "{{ frontend_dir }}/.env.local"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}='{{ item.value }}'"
+        create: true
+        mode: "0644"
+      loop: "{{ frontend_env | dict2items }}"
+      register: frontend_dotenv
+
+    # environment: μεταβλητές περιβάλλοντος μόνο για αυτό το task.
+    # Το build ξανατρέχει μόνο αν άλλαξε ο κώδικας ή το .env.local, ή αν δεν υπάρχει dist/.
+    - name: Check if the frontend has been built
+      ansible.builtin.stat:
+        path: "{{ frontend_dir }}/dist/index.html"
+      register: frontend_dist
+
+    - name: Install dependencies and build
+      ansible.builtin.shell: npm install && npm run build
+      args:
+        chdir: "{{ frontend_dir }}"
+      environment:
+        PATH: "{{ node_bin_dir }}:{{ ansible_env.PATH }}"
+      when: frontend_repo.changed or frontend_dotenv.changed or not frontend_dist.stat.exists
+
+    - name: Copy dist to the nginx site directory
+      ansible.builtin.copy:
+        src: "{{ frontend_dir }}/dist/"
+        dest: "{{ frontend_site_dir }}"
+        remote_src: true
+        owner: www-data
+        group: www-data
+        mode: "u=rwX,g=rX,o=rX"   # X: execute μόνο στους φακέλους
+      become: true
+
+    - name: Copy nginx conf file
+      ansible.builtin.template:
         src: ../files/nginx.vue.j2
-        dest: "/etc/nginx/sites-available/vue"
-      become: yes
+        dest: /etc/nginx/sites-available/vue
+        mode: "0644"
+      become: true
+      notify: reload nginx
 
-    - name: enable vue site in nginx
-      file:
-        src: "/etc/nginx/sites-available/vue"
-        dest: "/etc/nginx/sites-enabled/vue"
+    - name: Enable vue site in nginx
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/vue
+        dest: /etc/nginx/sites-enabled/vue
         state: link
-      become: yes
-    
+      become: true
+      notify: reload nginx
 
-    - name: de-activate default nginx site
-      file:
+    - name: Disable default nginx site
+      ansible.builtin.file:
         path: /etc/nginx/sites-enabled/default
         state: absent
-      become: yes
-      notify: restart nginx
-    
-  handlers:
-    - name: restart nginx
-      service:
-        name: nginx
-        state: restarted
-      become: yes
+      become: true
+      notify: reload nginx
 
-    
+    - name: Apply pending nginx changes
+      ansible.builtin.meta: flush_handlers
+
+    - name: Check that the site responds
+      ansible.builtin.uri:
+        url: http://localhost/
+
+  handlers:
+    # πρώτα έλεγχος σύνταξης (nginx -t) και μετά reload
+    - name: reload nginx
+      ansible.builtin.shell: nginx -t && systemctl reload nginx
+      become: true

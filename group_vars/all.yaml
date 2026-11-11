@@ -1,1 +1,18 @@
-ansible_python_interpreter: /usr/bin/python3
+---
+# Μεταβλητές για ΟΛΟΥΣ τους hosts.
+#
+# Ο python interpreter δεν ορίζεται εδώ: τον βρίσκει μόνο του το ansible
+# (interpreter_python = auto_silent στο ansible.cfg).
+
+# Στοιχεία της βάσης. Τα χρειάζονται και οι dbservers (για να τη δημιουργήσουν)
+# και οι appservers (για να συνδεθούν), γι' αυτό είναι στο "all" και όχι σε ένα group.
+# Σε πραγματικό project ο κωδικός μπαίνει σε αρχείο κρυπτογραφημένο με ansible-vault.
+db:
+  name: appdb
+  user: appuser
+  password: apppassword
+db_port: 5432
+
+# Η πόρτα του spring backend. Τη χρειάζονται οι appservers (εκεί τρέχει)
+# και οι frontservers (το nginx τους προωθεί εκεί τα /api).
+app_port: 8080

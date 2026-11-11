@@ -1,102 +1,84 @@
 ---
-- hosts: dbservers
-  become: yes
-  become_user: root
+# Εγκατάσταση PostgreSQL και δημιουργία βάσης + χρήστη για την εφαρμογή.
+#
+# Εκτέλεση:
+#   ansible-playbook -l dbserver-vm playbooks/postgres.yaml
+#
+# Μεταβλητές:
+#   group_vars/all.yaml:        db.name, db.user, db.password
+#   group_vars/dbservers.yaml:  postgres_version (από την έκδοση του Ubuntu),
+#                               postgres_conf_dir, db_allowed_cidr
 
+- name: Install PostgreSQL and create the application database
+  hosts: dbservers
+  become: true
 
   pre_tasks:
-    - name: Install the PostgreSQL package
-      apt:
-        name: ["postgresql-contrib", "postgresql-client"]
-        state: present
-        update_cache: yes
+    # Το postgres_version βγαίνει από το map postgres_versions (group_vars/dbservers.yaml).
+    # Αν η έκδοση του Ubuntu δεν υπάρχει εκεί, σταμάτα με καθαρό μήνυμα.
+    - name: Check that the Ubuntu version is supported
+      ansible.builtin.assert:
+        that: ansible_facts['distribution_version'] in postgres_versions
+        fail_msg: >-
+          Ubuntu {{ ansible_facts['distribution_version'] }} is not in postgres_versions
+          (supported: {{ postgres_versions.keys() | join(', ') }})
+        success_msg: "Ubuntu {{ ansible_facts['distribution_version'] }} -> PostgreSQL {{ postgres_version }}"
 
-    - name: install pip3
-      apt:
-        name: ["python3-pip"]
+    - name: Install PostgreSQL and psycopg2 (needed by the community.postgresql modules)
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
         state: present
-        update_cache: yes
-
-    - name: "Install Python packages"
-      pip:
-        name: "{{ item }}"
-        state: present
-      with_items:
-        - psycopg2-binary
+        update_cache: true
+        cache_valid_time: 3600
 
   tasks:
-    - name: check if postgres is initialized
-      ansible.builtin.stat:
-        path: /var/lib/postgresql/14/main
-      register: postgres_data
-
-    - name: debug stat
-      ansible.builtin.debug:
-        msg: "postgres data debug {{postgres_data}}"
-
-    - name: "Initialize PostgreSQL"
-      shell: "postgresql-setup initdb"
-      when: not postgres_data.stat.exists
-
-    - name: "Start and enable services"
-      service:
-        name: "{{ item }}"
+    # Στο Ubuntu η βάση αρχικοποιείται αυτόματα με την εγκατάσταση του πακέτου
+    - name: Start and enable postgresql
+      ansible.builtin.service:
+        name: postgresql
         state: started
-        enabled: yes
-      with_items:
-        - postgresql
+        enabled: true
 
-    - name: "Create app database"
-      postgresql_db:
+    - name: Create db user
+      community.postgresql.postgresql_user:
+        name: "{{ db.user }}"
+        password: "{{ db.password }}"
         state: present
+      become_user: postgres
+
+    # Από την PostgreSQL 15 μόνο ο owner της βάσης μπορεί να φτιάχνει πίνακες
+    # στο public schema, γι' αυτό ο χρήστης της εφαρμογής γίνεται owner.
+    - name: Create app database
+      community.postgresql.postgresql_db:
         name: "{{ db.name }}"
-      become: yes
+        owner: "{{ db.user }}"
+        state: present
       become_user: postgres
 
-
-    - name: "Create db user"
-      postgresql_user:
-          state: present
-          name: "{{ db.user }}"
-          password: "{{ db.password }}"
-      become: yes
-      become_user: postgres
-
-    - name: "Grant db user access to app db"
-      postgresql_privs:
-        type: database
-        database: "{{ db.name }}"
-        roles: "{{ db.user }}"
-        grant_option: no
-        privs: all
-      become: yes
-      become_user: postgres
-
-    - name: "Allow md5 connection for the db user"
-      postgresql_pg_hba:
-        dest: "/etc/postgresql/14/main/pg_hba.conf"
+    - name: Allow password (md5) connections for the db user from {{ db_allowed_cidr }}
+      community.postgresql.postgresql_pg_hba:
+        dest: "{{ postgres_conf_dir }}/pg_hba.conf"
         contype: host
-        databases: all
-        source: 0.0.0.0/0
-        method: md5
+        databases: "{{ db.name }}"
         users: "{{ db.user }}"
-        create: true
-      become: yes
+        source: "{{ db_allowed_cidr }}"
+        method: md5
       become_user: postgres
       notify: restart postgres
 
-    - name: "Allow connections from all"
-      lineinfile:
-        path: "/etc/postgresql/14/main/postgresql.conf"
+    - name: Listen on all network interfaces
+      ansible.builtin.lineinfile:
+        path: "{{ postgres_conf_dir }}/postgresql.conf"
+        regexp: "^#?listen_addresses\\s*="
         line: "listen_addresses = '*'"
-        regexp: "^#listen_addresses = 'localhost'"
-        state: present
-      become: yes
       become_user: postgres
       notify: restart postgres
 
   handlers:
     - name: restart postgres
-      service: name=postgresql state=restarted
-
-
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted

@@ -15,8 +15,6 @@ appservers:
     hosts:
       appserver-vm:
         ansible_host: appserver
-      frontend-vm:
-        ansible_host: frontserver
       gcloud-app-server:
         ansible_host: devops-gcloud
       azure-db-server:
@@ -24,6 +22,11 @@ appservers:
       devops-1:
         ansible_host: devops-vm-1
       
+
+frontservers:
+    hosts:
+      frontend-vm:
+        ansible_host: frontserver
 
 dbservers:
     hosts:

@@ -1,35 +1,44 @@
 ---
-- hosts: all
+# Spring + Vue + PostgreSQL με docker compose (docker-compose.yaml του spring repo).
+#
+#   ansible-playbook -l <appserver> playbooks/spring-vue-docker.yaml
+#
+# Οι containers ανοίγουν τις πόρτες 5432, 8080 και 9000: τρέξ' το σε host όπου
+# ΔΕΝ τρέχουν ήδη το spring.yaml / postgres.yaml (π.χ. ένα καινούργιο VM).
+#
+# Αν δεν υπάρχει docker, εγκαθίσταται πρώτα (tasks/install-docker.yaml).
+# Μεταβλητές: spring_repo_url, branch, appdir, app_env (group_vars/appservers.yaml)
+- name: Deploy spring and vue with docker compose
+  hosts: appservers
+
   tasks:
-
-    - name: Check if Docker is installed
-      shell: docker --version && docker compose version
+    - name: Check if docker and docker compose are installed
+      ansible.builtin.command: docker compose version
       register: docker_version_result
-      ignore_errors: true
+      changed_when: false
+      failed_when: false          # δεν είναι λάθος να λείπει, απλώς το εγκαθιστούμε
 
-    - name: Set Docker installed fact
-      set_fact:
-        docker_installed: "{{ docker_version_result.rc == 0 }}"
+    # include_tasks: τα tasks φορτώνονται την ώρα της εκτέλεσης (dynamic),
+    # οπότε μπορούμε να τα τρέξουμε υπό συνθήκη με when
+    - name: Install docker if it is missing
+      ansible.builtin.include_tasks: tasks/install-docker.yaml
+      when: docker_version_result.rc != 0
 
-    - name: Include install_docker playbook if Docker is not installed
-      include_tasks: import_docker_playbook.yml
-      when: not docker_installed
-
-    - name: "Clone the Spring repository"
-      git:
-        repo: "https://github.com/tsadimasteaching/ds-lab-2024.git"
+    - name: Clone the Spring repository
+      ansible.builtin.git:
+        repo: "{{ spring_repo_url }}"
         dest: "{{ appdir }}"
         version: "{{ branch }}"
-        force: yes
+        force: true
 
-    - name: "Populate application.properties"
-      lineinfile:
-        dest: "{{ appdir }}/src/main/resources/application.properties"
-        state: present
-        regexp: "^{{item.key}}="
-        line: "{{item.key}}={{item.value}}"
-      with_items:
-        - "{{app.env | dict2items}}"
+    - name: Populate application.properties
+      ansible.builtin.lineinfile:
+        path: "{{ appdir }}/src/main/resources/application.properties"
+        regexp: "^{{ item.key | regex_escape }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop: "{{ app_env | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
 
     - name: Tear down existing services
       community.docker.docker_compose_v2:
@@ -42,15 +51,7 @@
         build: always
         state: present
       register: output
-      notify: Restart Docker Compose
 
-    - debug:
-        var: output
-
-  handlers:
-  - name: Restart Docker Compose
-    community.docker.docker_compose_v2:
-      project_src: "{{ appdir }}"
-      state: restarted
-
-
+    - name: Show the containers
+      ansible.builtin.debug:
+        msg: "{{ output.containers | map(attribute='Name') | list }}"

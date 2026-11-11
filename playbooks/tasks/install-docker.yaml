@@ -1,0 +1,72 @@
+---
+# Εγκατάσταση Docker Engine + docker compose plugin από το επίσημο repository του Docker.
+# Δεν είναι playbook αλλά λίστα από tasks. Τη χρησιμοποιούν:
+#   playbooks/docker.yaml            (import_tasks)
+#   playbooks/spring-vue-docker.yaml (include_tasks, μόνο αν λείπει το docker)
+#
+# Η διανομή (noble, jammy, ...) και η αρχιτεκτονική (amd64, arm64) βγαίνουν από τα facts,
+# ώστε το ίδιο task να δουλεύει σε κάθε έκδοση Ubuntu.
+
+- name: Install packages needed for the docker repository
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+# Το apt-key είναι deprecated: το κλειδί μπαίνει σε αρχείο και το repository
+# αναφέρεται σε αυτό με signed-by.
+- name: Download the docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+  become: true
+
+- name: Add the docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ docker_arch_map[ansible_facts['architecture']] }} signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable
+    filename: docker
+    state: present
+  vars:
+    # ansible_facts['architecture'] -> όνομα αρχιτεκτονικής στο apt
+    docker_arch_map:
+      x86_64: amd64
+      aarch64: arm64
+  become: true
+
+- name: Install docker engine and compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin     # η εντολή "docker compose" (v2)
+    state: present
+    update_cache: true
+  become: true
+
+- name: Start and enable docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+  become: true
+
+- name: Add the current user to the docker group
+  ansible.builtin.user:
+    name: "{{ ansible_user_id }}"
+    groups: docker
+    append: true
+  become: true
+
+# Η νέα ομάδα ισχύει μόνο σε νέο login. Κλείνουμε την ssh σύνδεση ώστε
+# τα επόμενα tasks (π.χ. docker compose χωρίς sudo) να τη "δουν".
+- name: Reconnect so that the docker group membership is applied
+  ansible.builtin.meta: reset_connection

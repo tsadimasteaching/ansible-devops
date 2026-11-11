@@ -1,4 +1,7 @@
 ---
+# PostgreSQL με το role geerlingguy.postgresql (ansible-galaxy install geerlingguy.postgresql)
+#   ansible-playbook -l dbserver-vm playbooks/postgres-from-role.yaml
+# postgres_conf_dir και db_allowed_cidr: group_vars/dbservers.yaml
 - hosts: dbservers
   roles:
     - role: geerlingguy.postgresql
@@ -6,7 +9,7 @@
   tasks:
     - name: change listen_addresses to '*'
       lineinfile:
-        dest: /etc/postgresql/14/main/postgresql.conf
+        dest: "{{ postgres_conf_dir }}/postgresql.conf"
         regexp: "^#listen_addresses"
         line: "listen_addresses = '*'"
         state: present
@@ -19,6 +22,7 @@
   vars:
     postgresql_databases:
       - name: "{{ db.name }}"
+        owner: "{{ db.user }}"
     postgresql_users:
       - name: "{{ db.user }}"
         password: "{{ db.password }}"
@@ -28,6 +32,6 @@
       - { type: local, database: all, user: postgres, auth_method: peer }
       - { type: local, database: all, user: all, auth_method: peer }
       - { type: host, database: all, user: all, address: '127.0.0.1/32', auth_method: md5 }
-      - { type: host, database: all, user: all, address: '0.0.0.0/0', auth_method: md5 }
+      - { type: host, database: all, user: all, address: "{{ db_allowed_cidr }}", auth_method: md5 }
       - { type: host, database: all, user: all, address: '::1/128', auth_method: md5 }
 

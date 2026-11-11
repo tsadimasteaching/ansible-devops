@@ -5,7 +5,7 @@ client_max_body_size 4G;
 server_name _;
 
 location / {
-    root /var/www/vue;
+    root {{ frontend_site_dir }};
     try_files $uri $uri/ /index.html;
 }
 

@@ -1,51 +1,74 @@
 ---
-  - name: Update Kubernetes Deployment Image
-    hosts: localhost
-    gather_facts: no
-    vars:
-      namespace: default
-      deployment_name: spring-deployment
-      container_name: spring
-      new_image: "ghcr.io/tsadimas/ds-lab-2024:latest"
+# Αλλαγή του image ενός Kubernetes deployment και έλεγχος ότι έγινε το rollout.
+# Τρέχει τοπικά (π.χ. από τον Jenkins), όχι σε remote host.
+#
+#   ansible-playbook playbooks/k8s-update-spring-deployment.yaml -e image_tag=<git sha>
+#   ansible-playbook playbooks/k8s-update-spring-deployment.yaml -e kubeconfig_path=~/.kube/config
+#
+# Χρειάζεται: sudo apt install python3-kubernetes
+- name: Update Kubernetes Deployment Image
+  hosts: localhost
+  gather_facts: false
 
-    tasks:
-      - name: Update the deployment image
-        kubernetes.core.k8s:
-          state: present
-          kubeconfig: "/var/lib/jenkins/.kube/devops-microk8s"
-          namespace: "{{ namespace }}"
-          kind: Deployment
-          name: "{{ deployment_name }}"
-          definition:
-            spec:
-              template:
-                spec:
-                  containers:
-                    - name: "{{ container_name }}"
-                      image: "{{ new_image }}"
+  vars:
+    kubeconfig_path: /var/lib/jenkins/.kube/devops-microk8s
+    namespace: default
+    deployment_name: spring-deployment
+    container_name: spring
+    image_name: ghcr.io/tsadimas/ds-lab-2024
+    # Καλύτερα ένα συγκεκριμένο tag (π.χ. το git commit) από το latest:
+    # με latest το deployment δεν "βλέπει" αλλαγή και δεν κάνει rollout.
+    image_tag: latest
+    new_image: "{{ image_name }}:{{ image_tag }}"
 
+  # μεταβλητή περιβάλλοντος για όλα τα tasks (kubectl και k8s modules)
+  environment:
+    K8S_AUTH_KUBECONFIG: "{{ kubeconfig_path }}"
+    KUBECONFIG: "{{ kubeconfig_path }}"
 
-      - name: Wait for rollout to complete
-        command: kubectl rollout status deployment/{{ deployment_name }} -n {{ namespace }} --timeout=360s
-        register: rollout_result
-        environment:
-          KUBECONFIG: "/var/lib/jenkins/.kube/devops-microk8s"
-        failed_when: "'successfully rolled out' not in rollout_result.stdout"
-        changed_when: false
+  tasks:
+    - name: Update the deployment image to {{ new_image }}
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ namespace }}"
+        kind: Deployment
+        name: "{{ deployment_name }}"
+        definition:
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: "{{ container_name }}"
+                    image: "{{ new_image }}"
 
-      - name: Get pods in deployment
-        kubernetes.core.k8s_info:
-          kubeconfig: "/var/lib/jenkins/.kube/devops-microk8s"
-          kind: Pod
-          namespace: "{{ namespace }}"
-          label_selectors:
-            - "app={{ deployment_name }}"
-        register: pod_list
+    - name: Wait for rollout to complete
+      ansible.builtin.command: kubectl rollout status deployment/{{ deployment_name }} -n {{ namespace }} --timeout=360s
+      register: rollout_result
+      failed_when: "'successfully rolled out' not in rollout_result.stdout"
+      changed_when: false
 
-      - name: Ensure all pods use the correct image
-        fail:
-          msg: "One or more pods do not have the updated image {{ new_image }}"
-        when: >
-          pod_list.resources | selectattr('status.phase', 'equalto', 'Running') |
-          selectattr('spec.containers', 'defined') |
-          reject('containers_all_use_image', new_image) | list | length > 0
+    - name: Get pods in deployment
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - "app={{ deployment_name }}"
+      register: pod_list
+
+    # Τα images του container "container_name" σε όλα τα pods που τρέχουν
+    - name: Collect the images of the running pods
+      ansible.builtin.set_fact:
+        running_images: >-
+          {{ pod_list.resources
+             | selectattr('status.phase', 'equalto', 'Running')
+             | map(attribute='spec.containers') | flatten
+             | selectattr('name', 'equalto', container_name)
+             | map(attribute='image') | list }}
+
+    - name: Ensure all pods use the correct image
+      ansible.builtin.assert:
+        that:
+          - running_images | length > 0
+          - running_images | reject('equalto', new_image) | list | length == 0
+        fail_msg: "Expected {{ new_image }} in all running pods, found {{ running_images }}"
+        success_msg: "All {{ running_images | length }} pods use {{ new_image }}"

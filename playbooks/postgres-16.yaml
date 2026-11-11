@@ -1,89 +1,80 @@
 ---
-  - name: install postgres
-    hosts: dbservers
-    become: yes
-    become_user: root
+# PostgreSQL με lineinfile (αντί για το module postgresql_pg_hba) και
+# παράδειγμα block / rescue.
+#
+# Εκτέλεση:
+#   ansible-playbook -l dbserver-vm playbooks/postgres-16.yaml
+#   ansible-playbook -l dbserver-vm playbooks/postgres-16.yaml --tags edit   # μόνο τα config αρχεία
+#
+# Το postgres_conf_dir (/etc/postgresql/<έκδοση>/main) βγαίνει από την έκδοση του Ubuntu,
+# δες group_vars/dbservers.yaml. Έτσι το playbook δουλεύει σε 22.04 (pg 14) και 24.04 (pg 16).
+- name: Install postgres
+  hosts: dbservers
+  become: true
 
-    tasks:
-      - name: install postgres  and pip packages
-        apt:
-          name: postgresql, python3-pip, python3-psycopg2
-          state: present
-          update_cache: yes
-        tags:
-          - install
-     
-      - block:
+  tasks:
+    - name: Install postgres and the python driver
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - python3-psycopg2
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      tags:
+        - install
 
-        - name: edit postgres.conf
-          lineinfile: 
-            path: /etc/postgresql/16/main/postgresql.conf
-            regexp: '^#listen_addresses ='
-            line:  "listen_addresses='*'"
-          notify: 
-            - restart postgres
-          tags:
-            - edit
+    - name: Edit postgres configuration
+      tags:
+        - edit
+      block:
+        - name: Listen on all network interfaces (postgresql.conf)
+          ansible.builtin.lineinfile:
+            path: "{{ postgres_conf_dir }}/postgresql.conf"
+            regexp: "^#?listen_addresses\\s*="
+            line: "listen_addresses = '*'"
+          notify: restart postgres
 
-        - name: edit pg_hba.conf
-          lineinfile: 
-            path: /etc/postgresql/16/main/pg_hba.conf
-            line:  "host	all	all	0.0.0.0/0	md5"
-            create: yes
-          notify: 
-            - restart postgres
-          tags:
-            - edit
-                
-        when: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '24.04'
+        - name: Allow md5 connections from {{ db_allowed_cidr }} (pg_hba.conf)
+          ansible.builtin.lineinfile:
+            path: "{{ postgres_conf_dir }}/pg_hba.conf"
+            line: "host\tall\tall\t{{ db_allowed_cidr }}\tmd5"
+          notify: restart postgres
 
-
-     
-        
-      - block:
-        - name: create postgres user
-          postgresql_user:
+    # block / rescue: αν αποτύχει η δημιουργία (π.χ. λείπει το psycopg2),
+    # το rescue εγκαθιστά ό,τι λείπει και ξαναδοκιμάζει.
+    - name: Create database and user
+      become_user: postgres
+      block:
+        - name: Create postgres user
+          community.postgresql.postgresql_user:
             name: "{{ db.user }}"
             password: "{{ db.password }}"
-          become: yes
-          become_user: postgres
 
-        - name: create postgres database
-          postgresql_db:
+        - name: Create postgres database
+          community.postgresql.postgresql_db:
             name: "{{ db.name }}"
             owner: "{{ db.user }}"
-          become: yes
-          become_user: postgres
-          
-        rescue:
-        # - name: install python pg module
-        #   command: pip3 install psycopg2-binary --break-system-packages
-        #   tags:
-        #     - install
-        - name: apt install psycopg2-binary
-          apt:
+
+      rescue:
+        - name: Install psycopg2
+          ansible.builtin.apt:
             name: python3-psycopg2
             state: present
-          tags:
-            - install
+          become_user: root
 
-        always:
-          - name: create postgres user
-            postgresql_user:
-              name: "{{ db.user }}"
-              password: "{{ db.password }}"
-            become: yes
-            become_user: postgres
+        - name: Create postgres user (retry)
+          community.postgresql.postgresql_user:
+            name: "{{ db.user }}"
+            password: "{{ db.password }}"
 
-          - name: create postgres database
-            postgresql_db:
-              name: "{{ db.name }}"
-              owner: "{{ db.user }}"
-            become: yes
-            become_user: postgres 
+        - name: Create postgres database (retry)
+          community.postgresql.postgresql_db:
+            name: "{{ db.name }}"
+            owner: "{{ db.user }}"
 
-    handlers:
-      - name: restart postgres
-        service:
-          name: postgresql
-          state: restarted
+  handlers:
+    - name: restart postgres
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted

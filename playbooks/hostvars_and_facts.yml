@@ -1,12 +1,17 @@
 ---
+# Εμφάνιση των μεταβλητών και των facts ενός host.
+#   ansible-playbook -l <hostname> playbooks/hostvars_and_facts.yml
 - name: check
   hosts: all
 
   tasks:
-
-    - name: print hostvars
-      debug:
-        msg: "hostvars is {{hostvars}}"
+    # hostvars = μεταβλητές ΟΛΩΝ των hosts του inventory, π.χ. hostvars['dbserver-vm'].db
+    # Τυπώνουμε μόνο τον τρέχοντα host (inventory_hostname): για τους άλλους δεν έχουν
+    # μαζευτεί facts, οπότε μεταβλητές όπως το appdir ("{{ ansible_user_dir }}/spring")
+    # θα έβγαιναν undefined.
+    - name: Print the variables of this host
+      ansible.builtin.debug:
+        var: hostvars[inventory_hostname]
 
     - name: Show facts available on the system
       ansible.builtin.debug:

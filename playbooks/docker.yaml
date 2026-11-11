@@ -1,51 +1,12 @@
 ---
-- hosts: all
+# Εγκατάσταση Docker.
+#   ansible-playbook -l frontend-vm playbooks/docker.yaml
+#
+# Τα tasks είναι στο tasks/install-docker.yaml, ώστε να τα ξαναχρησιμοποιούν κι άλλα playbooks.
+- name: Install docker
+  hosts: all
 
   tasks:
-    - name: Install basic packages
-      apt:
-        name: "{{item}}"
-        state: present
-        update_cache: true
-      loop:
-        - software-properties-common
-        - curl
-        - apt-transport-https
-        - ca-certificates
-      become: yes
-
-    - name: get key
-      shell: "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -"
-      #ignore_errors: yes
-      become: yes
-
-    - name: Add docker ppa
-      apt_repository:
-        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
-        state: present
-        update_cache: yes
-      become: yes
-
-    - name: install docker
-      apt:
-        name: "{{item}}"
-        state: present
-        update_cache: true
-      loop:
-        - docker-ce
-        - docker-compose
-      become: yes
-
-    - name: start docker service
-      service:
-        name: docker
-        state: started
-        enabled: true
-      become: yes
-
-    - name: adding existing user to group docker
-      user:
-        name: "{{  ansible_user_id }}"
-        groups: docker
-        append: yes
-      become: yes
+    # import_tasks: τα tasks "μπαίνουν" εδώ όταν διαβάζεται το playbook (static)
+    - name: Install docker engine
+      ansible.builtin.import_tasks: tasks/install-docker.yaml
