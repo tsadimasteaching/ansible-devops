@@ -47,7 +47,7 @@
   tasks:
     - name: check if postgres is initialized
       ansible.builtin.stat:
-        path: /var/lib/postgresql/14/main
+        path: /var/lib/postgresql/{{postgres_version}}/main
       register: postgres_data
 
     - name: debug stat
