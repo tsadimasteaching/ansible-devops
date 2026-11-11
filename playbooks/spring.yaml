@@ -32,6 +32,7 @@
   vars:
     java_package: openjdk-21-jdk
     maven_version: "3.9.9"
+    app_start_timeout: 300       # δευτερόλεπτα· σε γρήγορο μηχάνημα: -e app_start_timeout=60
 
   # Τα pre_tasks εκτελούνται ΠΡΙΝ από τα tasks (και τα roles).
   # Εδώ βάζουμε ό,τι πρέπει να υπάρχει πριν ξεκινήσουμε (προαπαιτούμενα).
@@ -140,14 +141,9 @@
         mode: "0644"
       become: true
       notify: restart spring
-
-    - name: Ensure spring service is enabled and started
-      ansible.builtin.systemd_service:
-        name: spring
-        state: started
-        enabled: true
-        daemon_reload: true      # να "δει" το systemd το νέο/αλλαγμένο unit file
-      become: true
+    # Δεν κάνουμε εδώ start: θα το έκανε και ο handler "restart spring" λίγο μετά,
+    # οπότε στο πρώτο deploy η εφαρμογή θα ξεκινούσε δύο φορές.
+    # Το start/enable γίνεται στο βήμα 5, μετά τους handlers.
 
     # ------------------------------------------------------------------
     # 4. nginx reverse proxy
@@ -191,10 +187,22 @@
     - name: Run pending handlers now
       ansible.builtin.meta: flush_handlers
 
+    # Αν ο handler έτρεξε, η εφαρμογή ήδη ξεκίνησε και αυτό το task δεν αλλάζει τίποτα.
+    # Αν δεν έτρεξε (τίποτα δεν άλλαξε), εξασφαλίζει ότι τρέχει και ότι ξεκινά σε κάθε boot.
+    - name: Ensure spring service is enabled and started
+      ansible.builtin.systemd_service:
+        name: spring
+        state: started
+        enabled: true
+        daemon_reload: true      # να "δει" το systemd το νέο/αλλαγμένο unit file
+      become: true
+
+    # Η πόρτα ανοίγει μόνο όταν η εφαρμογή ξεκινήσει πλήρως (σύνδεση στη βάση, Hibernate, ...).
+    # Σε μικρό VM (1 CPU) αυτό παίρνει 2-3 λεπτά.
     - name: Wait for spring to listen on port {{ app_port }}
       ansible.builtin.wait_for:
         port: "{{ app_port }}"
-        timeout: 120
+        timeout: "{{ app_start_timeout }}"
 
     - name: Wait for nginx to listen on port 80
       ansible.builtin.wait_for:

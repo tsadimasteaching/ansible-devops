@@ -32,6 +32,9 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.define "appserver" do |h|
+    # Το Spring Boot με 1 CPU χρειάζεται 3-5 λεπτά για να ξεκινήσει: 2 CPU μόνο εδώ
+    h.vm.provider(:libvirt)    { |lv| lv.cpus = 2 }
+    h.vm.provider(:virtualbox) { |vb| vb.cpus = 2 }
     h.vm.hostname = "appserver"
     h.vm.network "private_network", ip: "192.168.56.101"
     h.vm.provision :shell, inline: 'cat /vagrant/control.pub >> /home/vagrant/.ssh/authorized_keys'
